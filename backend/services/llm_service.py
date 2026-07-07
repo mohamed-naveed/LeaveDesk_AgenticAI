@@ -99,6 +99,25 @@ class LLMService:
     def _fallback_process_chat(self, text: str, context_str: str) -> dict:
         text_lower = text.lower()
         
+        # Check if the user is attempting to apply for a leave
+        has_question_kw = any(w in text_lower for w in ["history", "past", "last", "previous", "holiday", "policy", "balance", "how much", "remaining", "pending", "approval"])
+        is_applying = any(w in text_lower for w in ["apply", "request", "want", "need", "take", "book", "tomorrow", "starting", "in ", "day"]) and not has_question_kw
+        
+        if is_applying:
+            current_date = date.today().isoformat()
+            for line in context_str.split("\n"):
+                if "current date is" in line.lower() or "today's date is" in line.lower():
+                    match = re.search(r"\d{4}-\d{2}-\d{2}", line)
+                    if match:
+                        current_date = match.group(0)
+                        break
+            
+            details = self._fallback_parse(text, current_date)
+            return {
+                "intent": "apply_leave",
+                "leave_details": details
+            }
+            
         # 1. Pending Approvals/Requests query
         if "pending" in text_lower or "approval" in text_lower:
             pending_lines = []
