@@ -1,0 +1,366 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>LeaveDesk — Employee Leave Management</title>
+    <!-- Fonts -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700;800&family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <!-- FontAwesome Icons -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <!-- Stylesheet -->
+    <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+
+
+    <!-- Notification Toast Container -->
+    <div id="toast-container" class="toast-container"></div>
+
+    <!-- 1. LOGIN SCREEN -->
+    <div id="login-screen" class="screen active">
+        <div class="login-card">
+            <div class="login-header">
+                <div class="logo-container">
+                    <i class="fa-solid fa-calendar-check logo-icon"></i>
+                </div>
+                <h2>Welcome back</h2>
+                <p>Your leave management, simplified</p>
+            </div>
+            
+            <form id="login-form">
+                <div class="form-group">
+                    <label for="login-email"><i class="fa-regular fa-envelope"></i> Email Address</label>
+                    <input type="email" id="login-email" placeholder="name@company.com" required autocomplete="email">
+                </div>
+                <div class="form-group">
+                    <label for="login-password"><i class="fa-solid fa-lock"></i> Password</label>
+                    <input type="password" id="login-password" placeholder="••••••••" required>
+                </div>
+                
+                <button type="submit" class="btn-primary login-btn">
+                    <span>Sign in</span>
+                    <i class="fa-solid fa-arrow-right"></i>
+                </button>
+            </form>
+
+            <div class="quick-credentials">
+                <h4><i class="fa-solid fa-bolt-lightning"></i> Demo Accounts</h4>
+                <div class="credential-tags">
+                    <button class="cred-tag" data-email="naveed@example.com" data-password="password123" data-role="employee">
+                        <span>Naveed (Employee)</span>
+                    </button>
+                    <button class="cred-tag" data-email="mahesh@example.com" data-password="password123" data-role="manager">
+                        <span>Mahesh (Manager)</span>
+                    </button>
+                    <button class="cred-tag" data-email="rahul@example.com" data-password="password123" data-role="employee">
+                        <span>Rahul (Employee)</span>
+                    </button>
+                    <button class="cred-tag" data-email="abinesh@example.com" data-password="password123" data-role="employee">
+                        <span>Abinesh (Employee)</span>
+                    </button>
+                    <button class="cred-tag" data-email="vijay@example.com" data-password="password123" data-role="employee">
+                        <span>Vijay (Employee)</span>
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- 2. MAIN APPLICATION WORKSPACE -->
+    <div id="app-screen" class="screen">
+        <div class="app-layout">
+            <!-- Sidebar Navigation -->
+            <aside class="sidebar">
+                <div class="sidebar-header">
+                    <div class="logo-inline">
+                    <i class="fa-solid fa-calendar-check"></i>
+                    <span>LeaveDesk</span>
+                </div>
+                </div>
+
+                <div class="sidebar-profile">
+                    <div class="profile-avatar" id="user-avatar">JD</div>
+                    <div class="profile-info">
+                        <h4 id="user-name">John Doe</h4>
+                        <span class="role-badge" id="user-role">Employee</span>
+                    </div>
+                </div>
+
+                <nav class="sidebar-nav">
+                    <ul id="nav-list">
+                        <!-- Navigation items dynamically rendered based on user role -->
+                    </ul>
+                </nav>
+
+                <div class="sidebar-footer">
+                    <button id="logout-btn" class="btn-logout">
+                        <i class="fa-solid fa-sign-out-alt"></i>
+                        <span>Logout</span>
+                    </button>
+                </div>
+            </aside>
+
+            <!-- Main Content Panel -->
+            <main class="main-content">
+                <!-- Top Header bar -->
+                <header class="content-header">
+                    <div class="header-title-container">
+                        <h2 id="view-title">Dashboard</h2>
+                        <p id="view-subtitle" class="text-secondary">Summary of your leave records</p>
+                    </div>
+                    <div style="display: flex; align-items: center; gap: 12px;">
+                        <button id="btn-reset-db" class="btn-danger" style="display: none; border: none; cursor: pointer; display: flex; align-items: center; gap: 6px;">
+                            <i class="fa-solid fa-trash-can"></i> Reset Database
+                        </button>
+                        <div class="connection-status" id="ws-status">
+                            <span class="status-dot online"></span>
+                            <span class="status-text">Connected (Secure)</span>
+                        </div>
+                    </div>
+                </header>
+
+                <!-- Core Dynamic Views -->
+                <div class="view-panel">
+                    
+                    <!-- EMPLOYEE: DASHBOARD VIEW -->
+                    <div id="view-dashboard" class="sub-view">
+                        <div class="balance-grid" id="balance-container">
+                            <!-- Populated dynamically via app.js -->
+                        </div>
+
+                        <div class="dashboard-actions-row">
+                            <div class="action-card" id="btn-quick-chat">
+                                <div class="action-icon purple-glow"><i class="fa-solid fa-comments"></i></div>
+                                <div class="action-details">
+                                    <h3>Talk to Leave Agent</h3>
+                                    <p>Apply for leaves using natural language</p>
+                                </div>
+                                <i class="fa-solid fa-chevron-right arrow"></i>
+                            </div>
+
+                            <div class="action-card" id="btn-quick-history">
+                                <div class="action-icon emerald-glow"><i class="fa-solid fa-history"></i></div>
+                                <div class="action-details">
+                                    <h3>My Request History</h3>
+                                    <p>Track statuses, rejections, and details</p>
+                                </div>
+                                <i class="fa-solid fa-chevron-right arrow"></i>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- EMPLOYEE: CHATBOT VIEW -->
+                    <div id="view-employee-chat" class="sub-view">
+                        <div class="chat-container">
+                            <div class="chat-messages-scroll" id="chat-messages">
+                                <!-- Messages dynamically rendered -->
+                            </div>
+                            
+                            <div class="chat-suggestions" id="chat-suggestions-container">
+                                <button class="suggestion-chip">I want 1 day casual leave starting in 10 days</button>
+                                <button class="suggestion-chip">Apply sick leave from tomorrow for 2 days</button>
+                                <button class="suggestion-chip">How much balance do I have remaining?</button>
+                            </div>
+
+                            <div class="chat-input-bar">
+                                <input type="text" id="chat-input" placeholder="Type a message to the Leave Agent (e.g. 'I want to apply for sick leave next Monday')..." autocomplete="off">
+                                <button id="chat-send-btn" class="chat-send-btn">
+                                    <i class="fa-solid fa-paper-plane"></i>
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- EMPLOYEE: HISTORY VIEW -->
+                    <div id="view-employee-history" class="sub-view">
+                        <div class="card-table-wrapper">
+                            <div class="card-table-header">
+                                <h3>Leave Requests Log</h3>
+                            </div>
+                            <div class="table-scroll-container">
+                                <table class="custom-table" id="my-requests-table">
+                                    <thead>
+                                        <tr>
+                                            <th>Type</th>
+                                            <th>Start Date</th>
+                                            <th>End Date</th>
+                                            <th>Reason</th>
+                                            <th>Status</th>
+                                            <th class="text-right">Actions</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody id="my-requests-body">
+                                        <!-- Dynamic request rows -->
+                                    </tbody>
+                                </table>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- MANAGER: PENDING APPROVALS VIEW -->
+                    <div id="view-manager-approvals" class="sub-view">
+                        <div class="view-header-tabs">
+                            <button class="tab-btn active" id="btn-show-pending">Pending Requests</button>
+                            <button class="tab-btn" id="btn-show-resolved">Actioned History</button>
+                        </div>
+
+                        <div id="manager-pending-section">
+                            <div class="pending-grid" id="pending-requests-container">
+                                <!-- Populated dynamically with pending requests cards -->
+                            </div>
+                        </div>
+
+                        <div id="manager-resolved-section" style="display: none;">
+                            <div class="card-table-wrapper">
+                                <div class="table-scroll-container">
+                                    <table class="custom-table">
+                                        <thead>
+                                            <tr>
+                                                <th>Employee</th>
+                                                <th>Type</th>
+                                                <th>Start Date</th>
+                                                <th>End Date</th>
+                                                <th>Status</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody id="manager-resolved-body">
+                                            <!-- Resolved/Actioned requests rows -->
+                                        </tbody>
+                                    </table>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- MANAGER: AUDIT LOGS VIEW -->
+                    <div id="view-manager-audit" class="sub-view">
+                        <div class="card-table-wrapper">
+                            <div class="card-table-header">
+                                <h3>Agent Decision Stream Logs</h3>
+                                <button class="btn-refresh-audit" id="btn-refresh-audit"><i class="fa-solid fa-arrows-rotate"></i> Refresh</button>
+                            </div>
+                            <div class="timeline-container" id="audit-logs-container">
+                                <!-- Populated dynamically with agent execution logs -->
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- MANAGER: EMPLOYEES VIEW -->
+                    <div id="view-manager-employees" class="sub-view">
+                        <div class="employees-grid" id="employees-list-container">
+                            <!-- Populated dynamically with employee profiles -->
+                        </div>
+                    </div>
+
+                    <!-- NOTIFICATIONS VIEW -->
+                    <div id="view-notifications" class="sub-view">
+                        <div class="card-table-wrapper" style="padding: 24px;">
+                            <div id="notifications-list-container">
+                                <!-- Dynamic notifications list -->
+                            </div>
+                        </div>
+                    </div>
+
+                </div>
+            </main>
+        </div>
+    </div>
+
+    <!-- Manager Review Dialog Modal -->
+    <div id="review-modal" class="modal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h3>Resolve Leave Request</h3>
+                <button class="modal-close" id="modal-close-btn">&times;</button>
+            </div>
+            <div class="modal-body">
+                <div class="request-summary-card" id="modal-request-summary">
+                    <!-- Dynamic summary -->
+                </div>
+                <div class="form-group margin-top-md">
+                    <label for="modal-comments"><i class="fa-regular fa-comment-dots"></i> Resolution Comments</label>
+                    <textarea id="modal-comments" rows="3" placeholder="Enter comments or reason for your decision..."></textarea>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button class="btn-secondary" id="modal-cancel-btn">Cancel</button>
+                <button class="btn-danger" id="modal-reject-btn"><i class="fa-solid fa-times"></i> Reject Request</button>
+                <button class="btn-success" id="modal-approve-btn"><i class="fa-solid fa-check"></i> Approve Request</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Employee Detail Modal -->
+    <div id="employee-detail-modal" class="modal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h3>Employee Details</h3>
+                <button class="modal-close" id="emp-modal-close-btn">&times;</button>
+            </div>
+            <div class="modal-body">
+                <div class="employee-detail-header" style="display: flex; align-items: center; gap: 16px; margin-bottom: 24px;">
+                    <div class="employee-card-avatar" id="emp-modal-avatar" style="width: 60px; height: 60px; font-size: 24px; display: flex; align-items: center; justify-content: center; margin-bottom: 0;">EM</div>
+                    <div>
+                        <h2 id="emp-modal-name" style="font-size: 20px; font-weight: 700; margin: 0; color: var(--slate);">Employee Name</h2>
+                        <p id="emp-modal-email" style="font-size: 13px; color: var(--text-secondary); margin: 4px 0 0 0;">email@example.com</p>
+                    </div>
+                </div>
+                
+                <h4 style="font-size: 14px; font-weight: 600; margin-bottom: 12px; color: var(--slate);">
+                    <i class="fa-solid fa-hourglass-half" style="color: var(--warning); margin-right: 6px;"></i> Pending Leave Requests
+                </h4>
+                <div class="card-table-wrapper" style="margin-bottom: 24px;">
+                    <div class="table-scroll-container">
+                        <table class="custom-table">
+                            <thead>
+                                <tr>
+                                    <th>Start Date</th>
+                                    <th>End Date</th>
+                                    <th>Type</th>
+                                    <th>Requested Days</th>
+                                    <th>Status</th>
+                                    <th>Reason</th>
+                                </tr>
+                            </thead>
+                            <tbody id="emp-modal-pending-leaves">
+                                <!-- Dynamic pending leaves -->
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+
+                <h4 style="font-size: 14px; font-weight: 600; margin-bottom: 12px; color: var(--slate);">
+                    <i class="fa-solid fa-circle-check" style="color: var(--success); margin-right: 6px;"></i> Approved Leave Dates
+                </h4>
+                <div class="card-table-wrapper">
+                    <div class="table-scroll-container">
+                        <table class="custom-table">
+                            <thead>
+                                <tr>
+                                    <th>Start Date</th>
+                                    <th>End Date</th>
+                                    <th>Type</th>
+                                    <th>Approved Days</th>
+                                    <th>Reason</th>
+                                </tr>
+                            </thead>
+                            <tbody id="emp-modal-approved-leaves">
+                                <!-- Dynamic approved leaves -->
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button class="btn-secondary" id="emp-modal-close-action-btn">Close</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- App JavaScript -->
+    <script src="app.js"></script>
+</body>
+</html>

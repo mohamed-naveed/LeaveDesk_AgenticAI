@@ -1,0 +1,81 @@
+class LeaveDecisionAgent:
+    """
+    Leave Decision Agent
+    Responsibility: Executes deterministic business logic rules to approve, reject,
+    or route leave requests to manager approval.
+    """
+    def execute(self, data):
+        # 1. Hard Rejections
+        if not data.get("employee_active"):
+            return {
+                "decision": "Rejected",
+                "status": "Rejected",
+                "reason": "Employee is inactive"
+            }
+
+        if data.get("overlap_found"):
+            return {
+                "decision": "Rejected",
+                "status": "Rejected",
+                "reason": "Overlapping Leave Request"
+            }
+
+        if data.get("threshold_exceeded"):
+            return {
+                "decision": "ManualReview",
+                "status": "Pending Manager Approval",
+                "reason": "Department leave threshold exceeded."
+            }
+
+        # Monthly limit removed — no cap applies; monthly_limit_exceeded is always False
+
+        if data.get("remaining_balance", 0) < data.get("working_days", 0):
+            return {
+                "decision": "ManualReview",
+                "status": "Pending Manager Approval",
+                "reason": "Insufficient leave balance (routed for Loss of Pay / Manual Review)."
+            }
+
+        # 2. Policy Violations (ManualReview)
+        # Check Notice Period
+        notice_days = data.get("notice_days", 0)
+        min_notice_days = data.get("min_notice_days", 0)
+        if notice_days < min_notice_days:
+            return {
+                "decision": "ManualReview",
+                "status": "Pending Manager Approval",
+                "reason": f"Notice period of {notice_days} days is less than the required {min_notice_days} days."
+            }
+
+        # Check Medical Certificate Requirement
+        medical_cert_after = data.get("medical_certificate_after_days")
+        if medical_cert_after is not None and data.get("working_days", 0) > medical_cert_after:
+            return {
+                "decision": "ManualReview",
+                "status": "Pending Manager Approval",
+                "reason": f"Medical certificate required for Sick Leave exceeding {int(medical_cert_after)} days."
+            }
+
+        # Check Half Day Allowance
+        if data.get("has_half_day") and not data.get("allow_half_day"):
+            return {
+                "decision": "ManualReview",
+                "status": "Pending Manager Approval",
+                "reason": "Half-day leaves are not supported for this leave type."
+            }
+
+        # 3. Manager Approval Requirement (Pending)
+        auto_approval_max = data.get("auto_approval_max_days")
+        if auto_approval_max is not None and data.get("working_days", 0) > auto_approval_max:
+            return {
+                "decision": "Pending",
+                "status": "Pending Manager Approval",
+                "reason": "Exceeds Auto Approval Limit"
+            }
+
+        # 4. Auto-Approved (AutoApproved)
+        return {
+            "decision": "AutoApproved",
+            "status": "Approved",
+            "reason": "All validation checks passed successfully."
+        }
