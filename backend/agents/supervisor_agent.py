@@ -225,7 +225,7 @@ class SupervisorAgent:
                             "subject": {"type": "string"},
                             "message": {"type": "string"}
                         },
-                        "required": ["employee_id", "leave_request_id", "subject", "message"]
+                        "required": ["employee_id", "subject", "message"]
                     }
                 }
             },
@@ -279,6 +279,7 @@ class SupervisorAgent:
                         f"Your goal is to validate and process a leave request for an employee by coordinating specialist tools.\n\n"
                         f"Context:\n{context_str}\n\n"
                         f"You MUST call the tools in the correct order to validate and resolve the leave request:\n"
+                        f"IMPORTANT: You MUST call only ONE tool at a time. Do NOT attempt to call multiple tools in parallel or in a single turn. You must wait for the output of the current tool before choosing and calling the next one in the sequence.\n\n"
                         f"1. Resolve the leave type ID using `resolve_leave_type_id`.\n"
                         f"2. Get the employee profile with `get_employee_profile` to find the manager and department.\n"
                         f"3. Parse dates and check calendar details (working days, weekends, holidays) with `check_calendar`.\n"
@@ -315,7 +316,7 @@ class SupervisorAgent:
                     messages=messages,
                     tools=tools,
                     tool_choice="auto",
-                    max_tokens=300
+                    max_tokens=100
                 )
                 
                 msg = response.choices[0].message
@@ -607,7 +608,7 @@ class SupervisorAgent:
                     messages.append({
                         "role": "tool",
                         "tool_call_id": tc.id,
-                        "content": json.dumps(tool_result)
+                        "content": json.dumps(tool_result, default=str)
                     })
                 
                 if loop_context["validation_result"] is not None:
@@ -662,8 +663,15 @@ class SupervisorAgent:
             }
 
         except Exception as e:
-            print(f"Supervisor LLM execution failed, falling back to deterministic pipeline. Error: {e}")
-            return self._execute_fallback_deterministic(employee_id, text, db, supervisor_start, input_payload)
+            print(f"Supervisor LLM execution failed. Error: {e}")
+            print("Falling back to deterministic Python pipeline...")
+            return self._execute_fallback_deterministic(
+                employee_id=employee_id,
+                text=text,
+                db=db,
+                supervisor_start=supervisor_start,
+                input_payload=input_payload
+            )
 
     def _execute_fallback_deterministic(self, employee_id: int, text: str, db, supervisor_start, input_payload):
         # 1. Run LLM Extraction (with its internal fallback)
@@ -1010,6 +1018,51 @@ class SupervisorAgent:
                         context_str += f"- Request ID {req.LeaveRequestId} by {requester.FullName}: {lt.LeaveTypeName} from {req.StartDate} to {req.EndDate} ({req.RequestedDays} days) - Status: {req.Status}\n"
                 else:
                     context_str += "- No pending requests to approve.\n"
+
+                # Fetch Managed Employees
+                managed_employees = db.query(Employee).filter(
+                    Employee.ManagerId == employee_id,
+                    Employee.IsActive == 1
+                ).all()
+                
+                context_str += "\nManaged Employees:\n"
+                if managed_employees:
+                    context_str += f"Total managed employees: {len(managed_employees)}\n"
+                    for me in managed_employees:
+                        context_str += f"- {me.FullName} (ID: {me.EmployeeId}, Email: {me.Email})\n"
+                else:
+                    context_str += "- No managed employees found.\n"
+                
+                # Fetch balances of managed employees
+                context_str += "\nManaged Employees Leave Balances:\n"
+                if managed_employees:
+                    for me in managed_employees:
+                        me_balances = db.query(LeaveBalance, LeaveType).join(
+                            LeaveType, LeaveBalance.LeaveTypeId == LeaveType.LeaveTypeId
+                        ).filter(LeaveBalance.EmployeeId == me.EmployeeId).all()
+                        
+                        bal_str = ", ".join([f"{lt.LeaveTypeName}: {float(bal.RemainingDays)} days remaining" for bal, lt in me_balances])
+                        context_str += f"- {me.FullName} (ID: {me.EmployeeId}): {bal_str}\n"
+                else:
+                    context_str += "- No managed employees balances found.\n"
+                
+                # Fetch history of managed employees
+                context_str += "\nManaged Employees Leave History:\n"
+                if managed_employees:
+                    history_found = False
+                    for me in managed_employees:
+                        me_hist = db.query(LeaveRequest, LeaveType).join(
+                            LeaveType, LeaveRequest.LeaveTypeId == LeaveType.LeaveTypeId
+                        ).filter(
+                            LeaveRequest.EmployeeId == me.EmployeeId
+                        ).order_by(LeaveRequest.StartDate.desc()).limit(5).all()
+                        if me_hist:
+                            history_found = True
+                            context_str += f"- {me.FullName} (ID: {me.EmployeeId}) history:\n"
+                            for req, lt in me_hist:
+                                context_str += f"  * {lt.LeaveTypeName}: from {req.StartDate} to {req.EndDate} ({req.RequestedDays} days) - Status: {req.Status}\n"
+                    if not history_found:
+                        context_str += "- No past leave requests found for managed employees.\n"
             else:
                 pending_reqs = db.query(LeaveRequest, LeaveType).join(
                     LeaveType, LeaveRequest.LeaveTypeId == LeaveType.LeaveTypeId

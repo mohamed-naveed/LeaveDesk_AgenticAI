@@ -5,7 +5,7 @@ from sqlalchemy.ext.declarative import declarative_base
 from dotenv import load_dotenv
 
 # Load environmental variables from root .env file
-load_dotenv()
+load_dotenv(override=True)
 
 DATABASE_URL = os.getenv("DATABASE_URL")
 if not DATABASE_URL:

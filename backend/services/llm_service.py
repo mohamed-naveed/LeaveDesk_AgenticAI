@@ -76,7 +76,7 @@ class LLMService:
                 ],
                 tools=tools,
                 tool_choice="auto",
-                max_tokens=300
+                max_tokens=100
             )
 
             msg = response.choices[0].message
@@ -93,15 +93,117 @@ class LLMService:
                 }
                 
         except Exception as e:
-            print(f"LLM Error: {e}")
+            print(f"LLM Error: {e}. Falling back to _fallback_process_chat.")
             return self._fallback_process_chat(text, context_str)
 
     def _fallback_process_chat(self, text: str, context_str: str) -> dict:
         text_lower = text.lower()
         
+        is_manager = "employee role: manager" in context_str.lower()
+        if is_manager:
+            def extract_section(context: str, start_header: str, end_headers: list) -> str:
+                lines = context.split("\n")
+                capture = False
+                captured_lines = []
+                for line in lines:
+                    if line.strip().lower() == start_header.lower() or line.strip().lower().startswith(start_header.lower()):
+                        capture = True
+                        captured_lines.append(line)
+                        continue
+                    if capture:
+                        if any(line.strip().lower().startswith(eh.lower()) for eh in end_headers):
+                            break
+                        captured_lines.append(line)
+                return "\n".join(captured_lines).strip()
+
+            # Extract managed employees list from context
+            employees = []
+            me_section = extract_section(context_str, "Managed Employees:", ["Managed Employees Leave Balances:"])
+            for line in me_section.split("\n"):
+                if line.startswith("- "):
+                    match = re.search(r"-\s+(.*?)\s+\(ID:\s*(\d+)", line)
+                    if match:
+                        name = match.group(1).strip()
+                        eid = match.group(2).strip()
+                        employees.append({"id": eid, "name": name, "name_lower": name.lower()})
+
+            specific_employee = None
+            for emp_info in employees:
+                if emp_info["name_lower"] in text_lower or emp_info["id"] in text_lower:
+                    specific_employee = emp_info
+                    break
+
+            is_employee_list_query = any(w in text_lower for w in ["who are my employees", "who all are", "list of employees", "list employees", "my employees", "number of employees", "no of employees", "my team", "team members", "who is in my team"])
+            if is_employee_list_query:
+                me_section = extract_section(context_str, "Managed Employees:", ["Managed Employees Leave Balances:", "Managed Employees Leave History:", "Upcoming Company Holidays:"])
+                return {
+                    "intent": "general_inquiry",
+                    "chat_response": f"Here is the list of your managed employees:\n{me_section}"
+                }
+
+            is_balance_query = any(w in text_lower for w in ["balance", "balances", "how much"])
+            is_personal = "my" in text_lower or "do i" in text_lower or "i have" in text_lower or "for me" in text_lower or "my own" in text_lower
+            if is_balance_query and not is_personal:
+                bal_section = extract_section(context_str, "Managed Employees Leave Balances:", ["Managed Employees Leave History:", "Upcoming Company Holidays:"])
+                if specific_employee:
+                    matching_line = None
+                    for line in bal_section.split("\n"):
+                        if f"(ID: {specific_employee['id']})" in line or specific_employee["name"] in line:
+                            matching_line = line
+                            break
+                    if matching_line:
+                        return {
+                            "intent": "general_inquiry",
+                            "chat_response": f"Here is the leave balance for {specific_employee['name']}:\n{matching_line}"
+                        }
+                    else:
+                        return {
+                            "intent": "general_inquiry",
+                            "chat_response": f"I couldn't find leave balances for employee {specific_employee['name']}."
+                        }
+                else:
+                    return {
+                        "intent": "general_inquiry",
+                        "chat_response": f"Here are the leave balances for all your managed employees:\n{bal_section}"
+                    }
+
+            is_history_query = any(w in text_lower for w in ["history", "past", "last", "previous", "applied"])
+            if is_history_query and not is_personal:
+                hist_section = extract_section(context_str, "Managed Employees Leave History:", ["Upcoming Company Holidays:"])
+                if specific_employee:
+                    captured_block = []
+                    capture = False
+                    for line in hist_section.split("\n"):
+                        if line.startswith("- ") and (f"(ID: {specific_employee['id']})" in line or specific_employee["name"] in line):
+                            capture = True
+                            captured_block.append(line)
+                            continue
+                        if capture:
+                            if line.startswith("- ") or "No past leave" in line:
+                                break
+                            captured_block.append(line)
+                    if captured_block:
+                        return {
+                            "intent": "general_inquiry",
+                            "chat_response": f"Here is the leave history for {specific_employee['name']}:\n" + "\n".join(captured_block)
+                        }
+                    else:
+                        return {
+                            "intent": "general_inquiry",
+                            "chat_response": f"I couldn't find any past leave history for employee {specific_employee['name']}."
+                        }
+                else:
+                    return {
+                        "intent": "general_inquiry",
+                        "chat_response": f"Here is the leave history for your managed employees:\n{hist_section}"
+                    }
+        
         # Check if the user is attempting to apply for a leave
         has_question_kw = any(w in text_lower for w in ["history", "past", "last", "previous", "holiday", "policy", "balance", "how much", "remaining", "pending", "approval"])
-        is_applying = any(w in text_lower for w in ["apply", "request", "want", "need", "take", "book", "tomorrow", "starting", "in ", "day"]) and not has_question_kw
+        is_applying = (
+            any(w in text_lower for w in ["apply", "appply", "aply", "applying", "request", "want", "need", "take", "book", "tomorrow", "starting", "in ", "day", "leave"]) 
+            or any(lt in text_lower for lt in ["casual", "sick", "annual", "unpaid"])
+        ) and not has_question_kw
         
         if is_applying:
             current_date = date.today().isoformat()
@@ -416,7 +518,7 @@ class LLMService:
                 ],
                 tools=tools,
                 tool_choice={"type": "function", "function": {"name": "apply_leave"}},
-                max_tokens=300
+                max_tokens=100
             )
 
             tool_calls = response.choices[0].message.tool_calls
@@ -424,7 +526,6 @@ class LLMService:
                 arguments = json.loads(tool_calls[0].function.arguments)
                 return arguments
             
-            return self._fallback_parse(text, current_date)
+            raise ValueError("LLM failed to call the apply_leave function.")
         except Exception as e:
-            # Fall back gracefully to regex on API or Auth exceptions
-            return self._fallback_parse(text, current_date)
+            raise e

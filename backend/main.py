@@ -20,3 +20,5 @@ import os
 # Mount frontend statically at root
 frontend_dir = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "frontend")
 app.mount("/", StaticFiles(directory=frontend_dir, html=True), name="frontend")
+# Force reload to pick up updated max_tokens configuration
+

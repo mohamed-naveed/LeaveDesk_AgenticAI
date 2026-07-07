@@ -14,6 +14,8 @@ An intelligent employee leave management system powered by a multi-agent AI pipe
 - 📊 **Audit Logs** — Every agent action is logged for full traceability
 - 🔐 **JWT Authentication** — Secure login for employees and managers
 - 🌐 **Gemini 2.5 Flash via OpenRouter** — LLM backbone for intent classification and leave parsing
+- 🔄 **LLM Fallback Mechanism** — Automatically falls back to deterministic python/regex validation if the LLM fails or hits token limits (e.g., code 402/401)
+- 👨‍💼 **Manager AI Queries** — Managers can query their list of managed employees, see balances (all or specific), and view past leave histories (all or specific)
 
 ---
 
