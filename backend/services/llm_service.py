@@ -118,6 +118,16 @@ class LLMService:
                 "leave_details": details
             }
             
+        # Check if the user is asking about teammate/team leaves (unauthorized for regular employees)
+        is_team_query = any(w in text_lower for w in ["team", "teammate", "teammates", "colleague", "colleagues", "others", "other"])
+        is_employee = "employee role: employee" in context_str.lower()
+        
+        if is_team_query and is_employee:
+            return {
+                "intent": "general_inquiry",
+                "chat_response": "You are not authorized to view teammate leaves. Employees can only view their own leave balances and past leaves."
+            }
+            
         # 1. Pending Approvals/Requests query
         if "pending" in text_lower or "approval" in text_lower:
             pending_lines = []

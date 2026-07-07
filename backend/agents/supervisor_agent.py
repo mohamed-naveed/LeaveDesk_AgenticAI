@@ -292,7 +292,7 @@ class SupervisorAgent:
                         f"11. If status is Pending Manager Approval, also call `create_approval_task`.\n"
                         f"12. Call `send_notification` to notify the user.\n"
                         f"13. Finally, call `submit_validation_result` to terminate and return the final results.\n\n"
-                        f"If the user's message is a general inquiry (such as asking about their leave balances, leave policies, past leave history, pending requests, teammates' leaves, or upcoming holidays), you do not need to call any validation tools. Just read the relevant section in the Context block above and reply directly to the user in friendly conversational text."
+                        f"If the user's message is a general inquiry (such as asking about their leave balances, leave policies, past leave history, pending requests, teammates' leaves, or upcoming holidays), you do not need to call any validation tools. Just read the relevant section in the Context block above and reply directly to the user. NOTE: Employees (Role: employee) are NOT authorized to view or query teammates' leaves. If the Employee Role in the context is 'employee' and they ask about teammate or other team members' leaves, you must refuse and state: 'You are not authorized to view teammate leaves. Employees can only view their own leave balances and past leaves.'"
                     )
                 },
                 {
@@ -943,6 +943,9 @@ class SupervisorAgent:
             }
 
     def _get_context_str(self, employee_id: int, db) -> str:
+        emp = db.query(Employee).filter(Employee.EmployeeId == employee_id).first()
+        role = emp.Role if emp else "employee"
+
         # Fetch Balances
         balances = db.query(LeaveBalance, LeaveType).join(LeaveType, LeaveBalance.LeaveTypeId == LeaveType.LeaveTypeId).filter(LeaveBalance.EmployeeId == employee_id).all()
         agg_balances = {}
@@ -952,7 +955,7 @@ class SupervisorAgent:
                 agg_balances[name] = 0
             agg_balances[name] += float(bal.AllocatedDays - bal.UsedDays)
         
-        context_str = "Employee Balances:\n"
+        context_str = f"Employee Role: {role}\n\nEmployee Balances:\n"
         for k, v in agg_balances.items():
             context_str += f"- {k.title()} Leave: {v} days remaining\n"
         
@@ -990,7 +993,6 @@ class SupervisorAgent:
             context_str += "- No past leave requests found.\n"
 
         # Fetch Pending Leave Requests
-        emp = db.query(Employee).filter(Employee.EmployeeId == employee_id).first()
         if emp:
             if emp.Role == "manager":
                 pending_reqs = db.query(LeaveRequest, Employee, LeaveType).join(
@@ -1023,8 +1025,8 @@ class SupervisorAgent:
                 else:
                     context_str += "- No pending requests found.\n"
 
-            # Fetch Teammate History
-            if emp.DepartmentId is not None:
+            # Fetch Teammate History (Only if manager)
+            if emp.Role == "manager" and emp.DepartmentId is not None:
                 team_history = db.query(LeaveRequest, Employee, LeaveType).join(
                     Employee, LeaveRequest.EmployeeId == Employee.EmployeeId
                 ).join(
