@@ -65,15 +65,25 @@ class LeaveDecisionAgent:
             }
 
         # 3. Manager Approval Requirement (Pending)
+        # Uses AutoApprovalMaxDays from the database policy table to dynamically determine the auto-approval limit
+        working_days = data.get("working_days", 0)
         auto_approval_max = data.get("auto_approval_max_days")
-        if auto_approval_max is not None and data.get("working_days", 0) > auto_approval_max:
+        if auto_approval_max is not None and working_days > auto_approval_max:
             return {
                 "decision": "Pending",
                 "status": "Pending Manager Approval",
-                "reason": "Exceeds Auto Approval Limit"
+                "reason": f"Leave request for {working_days} day(s) exceeds the Auto Approval Limit of {auto_approval_max} day(s) for this leave type."
             }
 
-        # 4. Auto-Approved (AutoApproved)
+        # 4. Monthly Auto-Approval Count Cap (Limit 1 per month)
+        if data.get("has_previous_approved_in_month"):
+            return {
+                "decision": "ManualReview",
+                "status": "Pending Manager Approval",
+                "reason": "You have already had an auto-approved request of this leave type in the same calendar month (limit is 1 per month)."
+            }
+
+        # 5. Auto-Approved (AutoApproved)
         return {
             "decision": "AutoApproved",
             "status": "Approved",

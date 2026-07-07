@@ -217,7 +217,21 @@ async def chat(payload: dict = Body(...), db: Session = Depends(get_db)):
                 msg = result.get('reason', 'All selected dates fall on weekends or holidays.')
             elif status in ["Approved", "Pending Manager Approval"] and start_date and end_date:
                 date_str = f"on {start_date}" if start_date == end_date else f"from {start_date} to {end_date}"
-                msg = f"Request for {days} day(s) {date_str} is {status}. {result.get('reason', '')}"
+                
+                # Check for weekends or holidays to mention in the chat response
+                info_notes = []
+                weekend_dates = result.get("weekend_dates", [])
+                if weekend_dates:
+                    dates_formatted = ", ".join(weekend_dates)
+                    info_notes.append(f"Weekends: {dates_formatted}")
+                
+                holiday_dates = result.get("holiday_dates", [])
+                if holiday_dates:
+                    dates_formatted = ", ".join(holiday_dates)
+                    info_notes.append(f"Holidays: {dates_formatted}")
+                
+                note_str = f" (Excluded {'; '.join(info_notes)})" if info_notes else ""
+                msg = f"Request for {days} day(s) {date_str} is {status}.{note_str} {result.get('reason', '')}"
             else:
                 msg = f"Request for {days} days is {status}. {result.get('reason', '')}"
             

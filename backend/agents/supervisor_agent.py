@@ -268,36 +268,8 @@ class SupervisorAgent:
         ]
 
         try:
-            # Fetch Context for LLM (Balances & Policies)
-            balances = db.query(LeaveBalance, LeaveType).join(LeaveType, LeaveBalance.LeaveTypeId == LeaveType.LeaveTypeId).filter(LeaveBalance.EmployeeId == employee_id).all()
-            agg_balances = {}
-            for bal, lt in balances:
-                name = lt.LeaveTypeName.lower().replace(" leave", "")
-                if name not in agg_balances:
-                    agg_balances[name] = 0
-                agg_balances[name] += float(bal.AllocatedDays - bal.UsedDays)
-            
-            context_str = "Employee Balances:\n"
-            for k, v in agg_balances.items():
-                context_str += f"- {k.title()} Leave: {v} days remaining\n"
-            
-            policies = db.query(LeavePolicy, LeaveType).join(LeaveType, LeavePolicy.LeaveTypeId == LeaveType.LeaveTypeId).filter(LeavePolicy.IsActive == True).all()
-            unique_policies = {}
-            for p, lt in policies:
-                name = lt.LeaveTypeName
-                if name not in unique_policies:
-                    unique_policies[name] = (p, lt)
-            
-            context_str += "\nCompany Leave Policy:\n"
-            for name, (p, lt) in unique_policies.items():
-                context_str += f"- {name}: "
-                if lt.AnnualLimit:
-                    context_str += f"Annual Limit: {lt.AnnualLimit} days. "
-                if p.MinNoticeDays > 0:
-                    context_str += f"Requires {p.MinNoticeDays} days advance notice. "
-                if p.AutoApprovalMaxDays:
-                    context_str += f"Auto-approved up to {p.AutoApprovalMaxDays} days."
-                context_str += "\n"
+            # Fetch Context for LLM (Balances, Policies, History, Teammates, Pending requests, and Holidays)
+            context_str = self._get_context_str(employee_id, db)
 
             messages = [
                 {
@@ -320,7 +292,7 @@ class SupervisorAgent:
                         f"11. If status is Pending Manager Approval, also call `create_approval_task`.\n"
                         f"12. Call `send_notification` to notify the user.\n"
                         f"13. Finally, call `submit_validation_result` to terminate and return the final results.\n\n"
-                        f"If the user's message is a general inquiry (e.g. asking about balances or policies), you do not need to call the validation tools. Just reply directly in text."
+                        f"If the user's message is a general inquiry (such as asking about their leave balances, leave policies, past leave history, pending requests, teammates' leaves, or upcoming holidays), you do not need to call any validation tools. Just read the relevant section in the Context block above and reply directly to the user in friendly conversational text."
                     )
                 },
                 {
@@ -329,9 +301,11 @@ class SupervisorAgent:
                 }
             ]
 
+            resolved_leave_type_id = None
+            resolved_start_date = None
             max_steps = 15
             step = 0
-            
+
             while step < max_steps:
                 step += 1
                 
@@ -340,7 +314,8 @@ class SupervisorAgent:
                     model=self.llm_service.model_name,
                     messages=messages,
                     tools=tools,
-                    tool_choice="auto"
+                    tool_choice="auto",
+                    max_tokens=1000
                 )
                 
                 msg = response.choices[0].message
@@ -369,6 +344,15 @@ class SupervisorAgent:
                     tool_name = tc.function.name
                     args = json.loads(tc.function.arguments)
                     
+                    if args:
+                        if args.get("leave_type_id"):
+                            try:
+                                resolved_leave_type_id = int(args.get("leave_type_id"))
+                            except:
+                                pass
+                        if args.get("start_date"):
+                            resolved_start_date = args.get("start_date")
+                    
                     tool_start = datetime.now()
                     tool_result = {}
                     agent_name_for_audit = None
@@ -381,6 +365,7 @@ class SupervisorAgent:
                             lt_record = db.query(LeaveType).filter(LeaveType.LeaveTypeCode.ilike(f"%{name_val}%")).first()
                         if lt_record:
                             tool_result = {"leave_type_id": lt_record.LeaveTypeId, "leave_type_name": lt_record.LeaveTypeName}
+                            resolved_leave_type_id = lt_record.LeaveTypeId
                         else:
                             tool_result = {"error": f"Could not resolve leave type '{name_val}'"}
                     
@@ -445,6 +430,25 @@ class SupervisorAgent:
                         facts = json.loads(args.get("data_json"))
                         if "notice_days" not in facts:
                             facts["notice_days"] = 10
+                            
+                        # Query if employee has any approved requests of this type in the same calendar month
+                        has_previous = False
+                        if resolved_leave_type_id and resolved_start_date:
+                            try:
+                                req_date = datetime.strptime(resolved_start_date, "%Y-%m-%d").date()
+                                count = db.query(LeaveRequest).filter(
+                                    LeaveRequest.EmployeeId == employee_id,
+                                    LeaveRequest.LeaveTypeId == resolved_leave_type_id,
+                                    LeaveRequest.Status == "Approved",
+                                    extract('month', LeaveRequest.StartDate) == req_date.month,
+                                    extract('year', LeaveRequest.StartDate) == req_date.year
+                                ).count()
+                                if count > 0:
+                                    has_previous = True
+                            except Exception as ex:
+                                print(f"Error checking previous approvals in LLM tool execution: {ex}")
+                                
+                        facts["has_previous_approved_in_month"] = has_previous
                         tool_result = self.decision_agent.execute(facts)
                         
                     elif tool_name == "create_leave_request_record":
@@ -623,6 +627,17 @@ class SupervisorAgent:
                 completed_at=supervisor_end
             )
             
+            # Compute weekends/holidays for the final result
+            try:
+                s_date = datetime.strptime(v_res["start_date"], "%Y-%m-%d").date()
+                e_date = datetime.strptime(v_res["end_date"], "%Y-%m-%d").date()
+                cal_res = self.calendar_agent.execute(s_date, e_date, db)
+                weekend_dates = [str(d["date"]) for d in cal_res["days"] if d["is_weekend"]]
+                holiday_dates = [str(d["date"]) for d in cal_res["days"] if d["is_holiday"]]
+            except Exception:
+                weekend_dates = []
+                holiday_dates = []
+
             return {
                 "success": True,
                 "status": v_res["status"],
@@ -630,7 +645,9 @@ class SupervisorAgent:
                 "requested_days": v_res["requested_days"],
                 "remaining_balance": v_res["remaining_balance"],
                 "start_date": v_res["start_date"],
-                "end_date": v_res["end_date"]
+                "end_date": v_res["end_date"],
+                "weekend_dates": weekend_dates,
+                "holiday_dates": holiday_dates
             }
 
         except Exception as e:
@@ -640,36 +657,8 @@ class SupervisorAgent:
     def _execute_fallback_deterministic(self, employee_id: int, text: str, db, supervisor_start, input_payload):
         # 1. Run LLM Extraction (with its internal fallback)
         try:
-            # Fetch Context for LLM
-            balances = db.query(LeaveBalance, LeaveType).join(LeaveType, LeaveBalance.LeaveTypeId == LeaveType.LeaveTypeId).filter(LeaveBalance.EmployeeId == employee_id).all()
-            agg_balances = {}
-            for bal, lt in balances:
-                name = lt.LeaveTypeName.lower().replace(" leave", "")
-                if name not in agg_balances:
-                    agg_balances[name] = 0
-                agg_balances[name] += float(bal.AllocatedDays - bal.UsedDays)
-            
-            context_str = "Employee Balances:\n"
-            for k, v in agg_balances.items():
-                context_str += f"- {k.title()} Leave: {v} days remaining\n"
-            
-            policies = db.query(LeavePolicy, LeaveType).join(LeaveType, LeavePolicy.LeaveTypeId == LeaveType.LeaveTypeId).filter(LeavePolicy.IsActive == True).all()
-            unique_policies = {}
-            for p, lt in policies:
-                name = lt.LeaveTypeName
-                if name not in unique_policies:
-                    unique_policies[name] = (p, lt)
-            
-            context_str += "\nCompany Leave Policy:\n"
-            for name, (p, lt) in unique_policies.items():
-                context_str += f"- {name}: "
-                if lt.AnnualLimit:
-                    context_str += f"Annual Limit: {lt.AnnualLimit} days. "
-                if p.MinNoticeDays > 0:
-                    context_str += f"Requires {p.MinNoticeDays} days advance notice. "
-                if p.AutoApprovalMaxDays:
-                    context_str += f"Auto-approved up to {p.AutoApprovalMaxDays} days."
-                context_str += "\n"
+            # Fetch Context for LLM (Balances, Policies, History, Teammates, Pending requests, and Holidays)
+            context_str = self._get_context_str(employee_id, db)
 
             llm_result = self.llm_service.process_chat(text, context_str)
             if llm_result.get("intent") == "general_inquiry":
@@ -762,6 +751,21 @@ class SupervisorAgent:
             # Monthly Limit removed — no cap applies
             monthly_limit_exceeded = False
 
+            # Check for previous approved requests of the same type in the same calendar month
+            has_previous_approved = False
+            try:
+                count = db.query(LeaveRequest).filter(
+                    LeaveRequest.EmployeeId == employee_id,
+                    LeaveRequest.LeaveTypeId == leave_type_id,
+                    LeaveRequest.Status == "Approved",
+                    extract('month', LeaveRequest.StartDate) == start_date.month,
+                    extract('year', LeaveRequest.StartDate) == start_date.year
+                ).count()
+                if count > 0:
+                    has_previous_approved = True
+            except Exception as ex:
+                print(f"Error checking previous approvals in fallback: {ex}")
+
             # Decision Agent
             decision_data = {
                 "employee_active": emp_result["is_active"] == 1 or emp_result["is_active"] is True,
@@ -775,7 +779,8 @@ class SupervisorAgent:
                 "auto_approval_max_days": pol_result["auto_approval_max_days"],
                 "overlap_found": overlap_result["overlap_found"],
                 "threshold_exceeded": team_result["threshold_exceeded"],
-                "monthly_limit_exceeded": monthly_limit_exceeded
+                "monthly_limit_exceeded": monthly_limit_exceeded,
+                "has_previous_approved_in_month": has_previous_approved
             }
 
             decision_result = self.decision_agent.execute(decision_data)
@@ -893,6 +898,10 @@ class SupervisorAgent:
             latest_balance = self.leave_balance_agent.execute(employee_id, leave_type_id, db)
             remaining_bal = latest_balance["remaining_days"] if latest_balance.get("success") else bal_result["remaining_days"]
 
+            # Extract weekends and holidays from the pre-computed days_list
+            weekend_dates = [str(d["date"]) for d in days_list if d["is_weekend"]]
+            holiday_dates = [str(d["date"]) for d in days_list if d["is_holiday"]]
+
             return {
                 "success": True,
                 "status": decision_result["status"],
@@ -900,7 +909,9 @@ class SupervisorAgent:
                 "requested_days": working_days,
                 "remaining_balance": remaining_bal,
                 "start_date": str(start_date),
-                "end_date": str(end_date)
+                "end_date": str(end_date),
+                "weekend_dates": weekend_dates,
+                "holiday_dates": holiday_dates
             }
         except Exception as fallback_err:
             db.rollback()
@@ -908,3 +919,118 @@ class SupervisorAgent:
                 "success": False,
                 "message": f"Orchestrator fallback error: {str(fallback_err)}"
             }
+
+    def _get_context_str(self, employee_id: int, db) -> str:
+        # Fetch Balances
+        balances = db.query(LeaveBalance, LeaveType).join(LeaveType, LeaveBalance.LeaveTypeId == LeaveType.LeaveTypeId).filter(LeaveBalance.EmployeeId == employee_id).all()
+        agg_balances = {}
+        for bal, lt in balances:
+            name = lt.LeaveTypeName.lower().replace(" leave", "")
+            if name not in agg_balances:
+                agg_balances[name] = 0
+            agg_balances[name] += float(bal.AllocatedDays - bal.UsedDays)
+        
+        context_str = "Employee Balances:\n"
+        for k, v in agg_balances.items():
+            context_str += f"- {k.title()} Leave: {v} days remaining\n"
+        
+        # Fetch Policies
+        policies = db.query(LeavePolicy, LeaveType).join(LeaveType, LeavePolicy.LeaveTypeId == LeaveType.LeaveTypeId).filter(LeavePolicy.IsActive == True).all()
+        unique_policies = {}
+        for p, lt in policies:
+            name = lt.LeaveTypeName
+            if name not in unique_policies:
+                unique_policies[name] = (p, lt)
+        
+        context_str += "\nCompany Leave Policy:\n"
+        for name, (p, lt) in unique_policies.items():
+            context_str += f"- {name}: "
+            if lt.AnnualLimit:
+                context_str += f"Annual Limit: {lt.AnnualLimit} days. "
+            if p.MinNoticeDays > 0:
+                context_str += f"Requires {p.MinNoticeDays} days advance notice. "
+            if p.AutoApprovalMaxDays:
+                context_str += f"Auto-approved up to {p.AutoApprovalMaxDays} days."
+            context_str += "\n"
+
+        # Fetch Recent Leave History
+        history = db.query(LeaveRequest, LeaveType).join(
+            LeaveType, LeaveRequest.LeaveTypeId == LeaveType.LeaveTypeId
+        ).filter(
+            LeaveRequest.EmployeeId == employee_id
+        ).order_by(LeaveRequest.StartDate.desc()).limit(5).all()
+        
+        context_str += "\nEmployee Recent Leave History:\n"
+        if history:
+            for req, lt in history:
+                context_str += f"- {lt.LeaveTypeName}: from {req.StartDate} to {req.EndDate} ({req.RequestedDays} days) - Status: {req.Status}\n"
+        else:
+            context_str += "- No past leave requests found.\n"
+
+        # Fetch Pending Leave Requests
+        emp = db.query(Employee).filter(Employee.EmployeeId == employee_id).first()
+        if emp:
+            if emp.Role == "manager":
+                pending_reqs = db.query(LeaveRequest, Employee, LeaveType).join(
+                    Employee, LeaveRequest.EmployeeId == Employee.EmployeeId
+                ).join(
+                    LeaveType, LeaveRequest.LeaveTypeId == LeaveType.LeaveTypeId
+                ).filter(
+                    Employee.ManagerId == employee_id,
+                    LeaveRequest.Status == "Pending Manager Approval"
+                ).all()
+                
+                context_str += "\nPending Requests to Approve:\n"
+                if pending_reqs:
+                    for req, requester, lt in pending_reqs:
+                        context_str += f"- Request ID {req.LeaveRequestId} by {requester.FullName}: {lt.LeaveTypeName} from {req.StartDate} to {req.EndDate} ({req.RequestedDays} days) - Status: {req.Status}\n"
+                else:
+                    context_str += "- No pending requests to approve.\n"
+            else:
+                pending_reqs = db.query(LeaveRequest, LeaveType).join(
+                    LeaveType, LeaveRequest.LeaveTypeId == LeaveType.LeaveTypeId
+                ).filter(
+                    LeaveRequest.EmployeeId == employee_id,
+                    LeaveRequest.Status == "Pending Manager Approval"
+                ).all()
+                
+                context_str += "\nYour Pending Requests:\n"
+                if pending_reqs:
+                    for req, lt in pending_reqs:
+                        context_str += f"- {lt.LeaveTypeName}: from {req.StartDate} to {req.EndDate} ({req.RequestedDays} days) - Status: {req.Status}\n"
+                else:
+                    context_str += "- No pending requests found.\n"
+
+            # Fetch Teammate History
+            if emp.DepartmentId is not None:
+                team_history = db.query(LeaveRequest, Employee, LeaveType).join(
+                    Employee, LeaveRequest.EmployeeId == Employee.EmployeeId
+                ).join(
+                    LeaveType, LeaveRequest.LeaveTypeId == LeaveType.LeaveTypeId
+                ).filter(
+                    Employee.DepartmentId == emp.DepartmentId,
+                    Employee.EmployeeId != employee_id,
+                    LeaveRequest.Status.in_(["Approved", "Pending Manager Approval"])
+                ).order_by(LeaveRequest.StartDate.desc()).limit(5).all()
+                
+                context_str += "\nTeam/Teammates Recent Leave History:\n"
+                if team_history:
+                    for req, teammate, lt in team_history:
+                        context_str += f"- {teammate.FullName}: {lt.LeaveTypeName} from {req.StartDate} to {req.EndDate} ({req.RequestedDays} days) - Status: {req.Status}\n"
+                else:
+                    context_str += "- No teammates leave requests found.\n"
+
+        # Fetch Holidays
+        from database.models import Holiday
+        holidays = db.query(Holiday).filter(
+            Holiday.HolidayDate >= date.today()
+        ).order_by(Holiday.HolidayDate.asc()).limit(10).all()
+        
+        context_str += "\nUpcoming Company Holidays:\n"
+        if holidays:
+            for h in holidays:
+                context_str += f"- {h.HolidayName}: {h.HolidayDate}\n"
+        else:
+            context_str += "- No upcoming holidays found.\n"
+
+        return context_str

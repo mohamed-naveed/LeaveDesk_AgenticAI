@@ -62,11 +62,21 @@ class LLMService:
             response = self.client.chat.completions.create(
                 model=self.model_name,
                 messages=[
-                    {"role": "system", "content": f"You are a helpful LeaveDesk AI assistant. Today's date is: {current_date}. If the user asks a question, answer it conversationally based on the context provided. If the user wants to apply for a leave, you MUST use the apply_leave tool.\n\nContext:\n{context_str}"},
+                    {
+                        "role": "system", 
+                        "content": (
+                            f"You are a helpful LeaveDesk AI assistant. Today's date is: {current_date}.\n"
+                            f"You MUST use today's date to resolve relative dates like 'tomorrow', 'next week', 'in 5 days', etc. into YYYY-MM-DD format.\n"
+                            f"If the user wants to apply for a leave (or has provided leave details), you MUST use the `apply_leave` tool to parse the parameters.\n"
+                            f"If the user asks a question, answer it conversationally based on the context provided.\n\n"
+                            f"Context:\n{context_str}"
+                        )
+                    },
                     {"role": "user", "content": text}
                 ],
                 tools=tools,
-                tool_choice="auto"
+                tool_choice="auto",
+                max_tokens=1000
             )
 
             msg = response.choices[0].message
@@ -88,26 +98,139 @@ class LLMService:
 
     def _fallback_process_chat(self, text: str, context_str: str) -> dict:
         text_lower = text.lower()
-        if "pending" in text_lower:
+        
+        # 1. Pending Approvals/Requests query
+        if "pending" in text_lower or "approval" in text_lower:
+            pending_lines = []
+            capture = False
+            for line in context_str.split("\n"):
+                if "Pending Requests to Approve" in line or "Your Pending Requests" in line:
+                    capture = True
+                    pending_lines.append(line)
+                    continue
+                if capture:
+                    if line.strip() == "" or "Employee Recent Leave History" in line or "Company Leave Policy" in line:
+                        break
+                    pending_lines.append(line)
+            
+            if pending_lines and not any("No pending requests" in l for l in pending_lines):
+                pending_text = "\n".join(pending_lines)
+                return {
+                    "intent": "general_inquiry",
+                    "chat_response": f"Here are the active pending requests retrieved from the database:\n{pending_text}"
+                }
+            else:
+                return {
+                    "intent": "general_inquiry",
+                    "chat_response": "I checked the database. There are currently no pending leave requests awaiting approval."
+                }
+                
+        # 2. Leave History query (Personal or Teammates)
+        if any(w in text_lower for w in ["history", "last leave", "past leave", "applied", "previous"]):
+            is_team_query = any(w in text_lower for w in ["team", "teammate", "teammates", "colleague", "colleagues", "others", "other"])
+            
+            history_lines = []
+            capture = False
+            
+            section_header = "Team/Teammates Recent Leave History:" if is_team_query else "Employee Recent Leave History:"
+            
+            for line in context_str.split("\n"):
+                if section_header in line:
+                    capture = True
+                    history_lines.append(line)
+                    continue
+                if capture:
+                    if line.strip() == "" or "Pending Requests" in line or "Company Leave Policy" in line or "Employee Balances" in line or "Upcoming Company Holidays" in line:
+                        break
+                    history_lines.append(line)
+            
+            if history_lines and not any("No teammates leave requests" in l or "No past leave requests" in l for l in history_lines):
+                history_text = "\n".join(history_lines)
+                subject_type = "team's leave history" if is_team_query else "leave history"
+                return {
+                    "intent": "general_inquiry",
+                    "chat_response": f"Here is the {subject_type} retrieved from the database:\n{history_text}"
+                }
+            else:
+                subject_type = "teammate leave records" if is_team_query else "recent leave requests"
+                return {
+                    "intent": "general_inquiry",
+                    "chat_response": f"I couldn't find any {subject_type} in the database history."
+                }
+                
+        # 3. Policy & Balance query
+        if any(w in text_lower for w in ["policy", "balance", "how much", "do i have", "limit", "remaining"]):
+            balance_lines = []
+            policy_lines = []
+            current_section = None
+            for line in context_str.split("\n"):
+                if "Employee Balances:" in line:
+                    current_section = "balances"
+                    continue
+                elif "Company Leave Policy:" in line:
+                    current_section = "policy"
+                    continue
+                elif "Employee Recent Leave History:" in line or "Pending Requests to Approve" in line:
+                    current_section = None
+                
+                if current_section == "balances" and line.startswith("-"):
+                    balance_lines.append(line)
+                elif current_section == "policy" and line.startswith("-"):
+                    policy_lines.append(line)
+            
+            response_msg = "Here is the dynamic data retrieved from the database:\n\n"
+            if balance_lines:
+                response_msg += "**Your Leave Balances:**\n" + "\n".join(balance_lines) + "\n\n"
+            if policy_lines:
+                response_msg += "**Leave Policies:**\n" + "\n".join(policy_lines)
+            
             return {
                 "intent": "general_inquiry",
-                "chat_response": "I have checked the system. There are currently 0 pending requests requiring your review."
+                "chat_response": response_msg
             }
-        if "overlap" in text_lower:
+            
+        # 4. Excluded weekends / overlaps
+        if "overlap" in text_lower or "conflict" in text_lower:
             return {
                 "intent": "general_inquiry",
-                "chat_response": "Calendar analysis complete. There are no leave overlaps scheduled for your team this month."
+                "chat_response": "For calendar conflicts or overlap reports, please refer to the team dashboard or history."
             }
-        if "policy" in text_lower or "balance" in text_lower or "how much" in text_lower or "do i have" in text_lower:
-            return {
-                "intent": "general_inquiry",
-                "chat_response": f"Based on your profile:\n{context_str}"
-            }
-        else:
-            return {
-                "intent": "apply_leave",
-                "leave_details": self._fallback_parse(text, date.today().strftime("%Y-%m-%d"))
-            }
+
+        # 5. Holiday query
+        if "holiday" in text_lower or "holidays" in text_lower:
+            holiday_lines = []
+            capture = False
+            for line in context_str.split("\n"):
+                if "Upcoming Company Holidays:" in line:
+                    capture = True
+                    holiday_lines.append(line)
+                    continue
+                if capture:
+                    if line.strip() == "" or "Company Leave Policy" in line or "Employee Balances" in line:
+                        break
+                    holiday_lines.append(line)
+            
+            if holiday_lines and not any("No upcoming holidays" in l for l in holiday_lines):
+                holiday_text = "\n".join(holiday_lines)
+                return {
+                    "intent": "general_inquiry",
+                    "chat_response": f"Here are the upcoming company holidays retrieved from the database:\n{holiday_text}"
+                }
+            else:
+                return {
+                    "intent": "general_inquiry",
+                    "chat_response": "I checked the database. There are currently no upcoming company holidays found."
+                }
+            
+        # 6. Block creation/storage when LLM is down (prevent default apply_leave)
+        return {
+            "intent": "general_inquiry",
+            "chat_response": (
+                "The AI Chat service is temporarily offline (401 Unauthorized). "
+                "Applying for leaves via chat is disabled at the moment, and no new requests will be stored in the database. "
+                "However, you can still query your current balances, history, or policies by typing 'balance' or 'history'."
+            )
+        }
 
     def _fallback_parse(self, text: str, current_date: str) -> dict:
         """
@@ -263,7 +386,8 @@ class LLMService:
                     {"role": "user", "content": text}
                 ],
                 tools=tools,
-                tool_choice={"type": "function", "function": {"name": "apply_leave"}}
+                tool_choice={"type": "function", "function": {"name": "apply_leave"}},
+                max_tokens=1000
             )
 
             tool_calls = response.choices[0].message.tool_calls
