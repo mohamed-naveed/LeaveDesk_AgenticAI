@@ -208,6 +208,7 @@ function renderSidebarNav() {
 
     if (currentUser.role === 'admin') {
         navList.appendChild(createNavItem('manager-approvals', 'fa-solid fa-square-check', 'Pending Approvals'));
+        navList.appendChild(createNavItem('employee-chat', 'fa-solid fa-comments', 'Chat with LeaveDesk AI'));
         navList.appendChild(createNavItem('manager-employees', 'fa-solid fa-users', 'Employees List'));
         navList.appendChild(createNavItem('manager-audit', 'fa-solid fa-terminal', 'Agent Decison Stream'));
         navList.appendChild(createNavItem('notifications', 'fa-solid fa-bell', 'Notifications'));
