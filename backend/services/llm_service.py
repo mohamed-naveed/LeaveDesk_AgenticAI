@@ -126,7 +126,7 @@ class LLMService:
                 }
                 
         # 2. Leave History query (Personal or Teammates)
-        if any(w in text_lower for w in ["history", "last leave", "past leave", "applied", "previous"]):
+        if any(w in text_lower for w in ["history", "last leave", "past leave", "applied", "previous", "leaves", "leave"]):
             is_team_query = any(w in text_lower for w in ["team", "teammate", "teammates", "colleague", "colleagues", "others", "other"])
             
             history_lines = []
