@@ -315,7 +315,7 @@ class SupervisorAgent:
                     messages=messages,
                     tools=tools,
                     tool_choice="auto",
-                    max_tokens=1000
+                    max_tokens=300
                 )
                 
                 msg = response.choices[0].message
@@ -431,24 +431,35 @@ class SupervisorAgent:
                         if "notice_days" not in facts:
                             facts["notice_days"] = 10
                             
-                        # Query if employee has any approved requests of this type in the same calendar month
+                        # Query if employee has met/exceeded approved requests count limit in the same calendar month
                         has_previous = False
+                        approved_count = 0
+                        limit = 1
                         if resolved_leave_type_id and resolved_start_date:
                             try:
                                 req_date = datetime.strptime(resolved_start_date, "%Y-%m-%d").date()
-                                count = db.query(LeaveRequest).filter(
+                                approved_count = db.query(LeaveRequest).filter(
                                     LeaveRequest.EmployeeId == employee_id,
                                     LeaveRequest.LeaveTypeId == resolved_leave_type_id,
                                     LeaveRequest.Status == "Approved",
                                     extract('month', LeaveRequest.StartDate) == req_date.month,
                                     extract('year', LeaveRequest.StartDate) == req_date.year
                                 ).count()
-                                if count > 0:
+                                
+                                policy = db.query(LeavePolicy).filter(
+                                    LeavePolicy.LeaveTypeId == resolved_leave_type_id,
+                                    LeavePolicy.IsActive == True
+                                ).first()
+                                limit = policy.AutoApprovalMaxRequestsPerMonth if (policy and policy.AutoApprovalMaxRequestsPerMonth is not None) else 1
+                                
+                                if approved_count >= limit:
                                     has_previous = True
                             except Exception as ex:
                                 print(f"Error checking previous approvals in LLM tool execution: {ex}")
                                 
                         facts["has_previous_approved_in_month"] = has_previous
+                        facts["approved_requests_count_in_month"] = approved_count
+                        facts["auto_approval_max_requests_per_month"] = limit
                         tool_result = self.decision_agent.execute(facts)
                         
                     elif tool_name == "create_leave_request_record":
@@ -753,15 +764,24 @@ class SupervisorAgent:
 
             # Check for previous approved requests of the same type in the same calendar month
             has_previous_approved = False
+            approved_count = 0
+            limit = 1
             try:
-                count = db.query(LeaveRequest).filter(
+                approved_count = db.query(LeaveRequest).filter(
                     LeaveRequest.EmployeeId == employee_id,
                     LeaveRequest.LeaveTypeId == leave_type_id,
                     LeaveRequest.Status == "Approved",
                     extract('month', LeaveRequest.StartDate) == start_date.month,
                     extract('year', LeaveRequest.StartDate) == start_date.year
                 ).count()
-                if count > 0:
+                
+                policy = db.query(LeavePolicy).filter(
+                    LeavePolicy.LeaveTypeId == leave_type_id,
+                    LeavePolicy.IsActive == True
+                ).first()
+                limit = policy.AutoApprovalMaxRequestsPerMonth if (policy and policy.AutoApprovalMaxRequestsPerMonth is not None) else 1
+                
+                if approved_count >= limit:
                     has_previous_approved = True
             except Exception as ex:
                 print(f"Error checking previous approvals in fallback: {ex}")
@@ -780,7 +800,9 @@ class SupervisorAgent:
                 "overlap_found": overlap_result["overlap_found"],
                 "threshold_exceeded": team_result["threshold_exceeded"],
                 "monthly_limit_exceeded": monthly_limit_exceeded,
-                "has_previous_approved_in_month": has_previous_approved
+                "has_previous_approved_in_month": has_previous_approved,
+                "approved_requests_count_in_month": approved_count,
+                "auto_approval_max_requests_per_month": limit
             }
 
             decision_result = self.decision_agent.execute(decision_data)

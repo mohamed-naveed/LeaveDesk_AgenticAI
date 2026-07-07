@@ -76,7 +76,7 @@ class LLMService:
                 ],
                 tools=tools,
                 tool_choice="auto",
-                max_tokens=1000
+                max_tokens=300
             )
 
             msg = response.choices[0].message
@@ -387,7 +387,7 @@ class LLMService:
                 ],
                 tools=tools,
                 tool_choice={"type": "function", "function": {"name": "apply_leave"}},
-                max_tokens=1000
+                max_tokens=300
             )
 
             tool_calls = response.choices[0].message.tool_calls

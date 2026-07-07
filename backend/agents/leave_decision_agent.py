@@ -75,12 +75,14 @@ class LeaveDecisionAgent:
                 "reason": f"Leave request for {working_days} day(s) exceeds the Auto Approval Limit of {auto_approval_max} day(s) for this leave type."
             }
 
-        # 4. Monthly Auto-Approval Count Cap (Limit 1 per month)
+        # 4. Monthly Auto-Approval Count Cap
         if data.get("has_previous_approved_in_month"):
+            limit = data.get("auto_approval_max_requests_per_month", 1)
+            count = data.get("approved_requests_count_in_month", 0)
             return {
                 "decision": "ManualReview",
                 "status": "Pending Manager Approval",
-                "reason": "You have already had an auto-approved request of this leave type in the same calendar month (limit is 1 per month)."
+                "reason": f"Leave request exceeds the monthly auto-approval frequency limit of {limit} request(s) for this leave type (you already have {count} approved request(s) this month)."
             }
 
         # 5. Auto-Approved (AutoApproved)

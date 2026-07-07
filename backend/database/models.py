@@ -49,6 +49,7 @@ class LeavePolicy(Base):
     AllowHalfDay = Column(Boolean, nullable=False, default=False)
     TeamLeaveThresholdPercent = Column(Numeric(5, 2), nullable=True)
     AutoApprovalMaxDays = Column(Numeric(5, 2), nullable=True)
+    AutoApprovalMaxRequestsPerMonth = Column(Integer, nullable=True, default=1)
     EffectiveFrom = Column(Date, nullable=False)
     EffectiveTo = Column(Date, nullable=True)
     IsActive = Column(Boolean, nullable=False, default=True)
