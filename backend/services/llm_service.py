@@ -199,7 +199,7 @@ class LLMService:
                     }
         
         # Check if the user is attempting to apply for a leave
-        has_question_kw = any(w in text_lower for w in ["history", "past", "last", "previous", "holiday", "policy", "balance", "how much", "remaining", "pending", "approval"])
+        has_question_kw = any(w in text_lower for w in ["history", "past", "last", "previous", "holiday", "policy", "policies", "rule", "rules", "balance", "balances", "how much", "remaining", "pending", "approval", "limit", "limits"])
         is_applying = (
             any(w in text_lower for w in ["apply", "appply", "aply", "applying", "request", "want", "need", "take", "book", "tomorrow", "starting", "in ", "day", "leave"]) 
             or any(lt in text_lower for lt in ["casual", "sick", "annual", "unpaid"])
@@ -256,6 +256,44 @@ class LLMService:
                     "chat_response": "I checked the database. There are currently no pending leave requests awaiting approval."
                 }
                 
+        # 3. Policy & Balance query
+        if any(w in text_lower for w in ["policy", "policies", "rule", "rules", "balance", "balances", "how much", "do i have", "limit", "limits", "remaining"]) and "history" not in text_lower:
+            balance_lines = []
+            policy_lines = []
+            current_section = None
+            for line in context_str.split("\n"):
+                if "Employee Balances:" in line:
+                    current_section = "balances"
+                    continue
+                elif "Company Leave Policy:" in line:
+                    current_section = "policy"
+                    continue
+                elif "Employee Recent Leave History:" in line or "Pending Requests to Approve" in line:
+                    current_section = None
+                
+                if current_section == "balances" and line.startswith("-"):
+                    balance_lines.append(line)
+                elif current_section == "policy" and line.startswith("-"):
+                    policy_lines.append(line)
+            
+            show_balances = any(w in text_lower for w in ["balance", "balances", "how much", "remaining"])
+            show_policies = any(w in text_lower for w in ["policy", "policies", "rule", "rules", "limit", "limits"])
+            
+            if not show_balances and not show_policies:
+                show_balances = True
+                show_policies = True
+                
+            response_msg = "Here is the dynamic data retrieved from the database:\n\n"
+            if show_balances and balance_lines:
+                response_msg += "**Your Leave Balances:**\n" + "\n".join(balance_lines) + "\n\n"
+            if show_policies and policy_lines:
+                response_msg += "**Leave Policies:**\n" + "\n".join(policy_lines)
+            
+            return {
+                "intent": "general_inquiry",
+                "chat_response": response_msg.strip()
+            }
+            
         # 2. Leave History query (Personal or Teammates)
         if any(w in text_lower for w in ["history", "last leave", "past leave", "applied", "previous", "leaves", "leave"]):
             is_team_query = any(w in text_lower for w in ["team", "teammate", "teammates", "colleague", "colleagues", "others", "other"])
@@ -288,37 +326,6 @@ class LLMService:
                     "intent": "general_inquiry",
                     "chat_response": f"I couldn't find any {subject_type} in the database history."
                 }
-                
-        # 3. Policy & Balance query
-        if any(w in text_lower for w in ["policy", "balance", "how much", "do i have", "limit", "remaining"]):
-            balance_lines = []
-            policy_lines = []
-            current_section = None
-            for line in context_str.split("\n"):
-                if "Employee Balances:" in line:
-                    current_section = "balances"
-                    continue
-                elif "Company Leave Policy:" in line:
-                    current_section = "policy"
-                    continue
-                elif "Employee Recent Leave History:" in line or "Pending Requests to Approve" in line:
-                    current_section = None
-                
-                if current_section == "balances" and line.startswith("-"):
-                    balance_lines.append(line)
-                elif current_section == "policy" and line.startswith("-"):
-                    policy_lines.append(line)
-            
-            response_msg = "Here is the dynamic data retrieved from the database:\n\n"
-            if balance_lines:
-                response_msg += "**Your Leave Balances:**\n" + "\n".join(balance_lines) + "\n\n"
-            if policy_lines:
-                response_msg += "**Leave Policies:**\n" + "\n".join(policy_lines)
-            
-            return {
-                "intent": "general_inquiry",
-                "chat_response": response_msg
-            }
             
         # 4. Excluded weekends / overlaps
         if "overlap" in text_lower or "conflict" in text_lower:
