@@ -162,14 +162,6 @@ class LLMService:
                     specific_employee = emp_info
                     break
 
-            is_employee_list_query = any(w in text_lower for w in ["who are my employees", "who all are", "list of employees", "list employees", "my employees", "number of employees", "no of employees", "my team", "team members", "who is in my team", "all the employees", "all employees", "show employees", "show the employees"])
-            if is_employee_list_query:
-                me_section = extract_section(context_str, "Managed Employees:", ["Managed Employees Leave Balances:", "Managed Employees Leave History:", "Upcoming Company Holidays:"])
-                return {
-                    "intent": "general_inquiry",
-                    "chat_response": f"Here is the list of your managed employees:\n{me_section}"
-                }
-
             # Check if query is about a specific employee's id/email/profile info
             is_info_query = any(w in text_lower for w in ["id", "code", "email", "profile", "details"])
             if specific_employee and is_info_query:
@@ -184,6 +176,14 @@ class LLMService:
                         "intent": "general_inquiry",
                         "chat_response": f"Here are the details for {specific_employee['name']}:\n{matching_line.strip('- ')}"
                     }
+
+            is_employee_list_query = any(w in text_lower for w in ["who are my employees", "who all are", "list of employees", "list employees", "my employees", "number of employees", "no of employees", "my team", "team members", "who is in my team", "all the employees", "all employees", "show employees", "show the employees", "all employee details", "all employees details", "employee details"])
+            if is_employee_list_query:
+                me_section = extract_section(context_str, "Managed Employees:", ["Managed Employees Leave Balances:", "Managed Employees Leave History:", "Upcoming Company Holidays:"])
+                return {
+                    "intent": "general_inquiry",
+                    "chat_response": f"Here is the list of your managed employees:\n{me_section}"
+                }
 
             is_balance_query = any(w in text_lower for w in ["balance", "balances", "how much"])
             is_personal = "my" in text_lower or "do i" in text_lower or "i have" in text_lower or "for me" in text_lower or "my own" in text_lower
