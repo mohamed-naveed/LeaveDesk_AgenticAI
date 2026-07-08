@@ -962,6 +962,14 @@ class SupervisorAgent:
             profile_str += f"- Email: {emp.Email}\n"
             profile_str += f"- Role: {emp.Role}\n"
             profile_str += f"- Joining Date: {emp.JoiningDate.strftime('%Y-%m-%d') if emp.JoiningDate else ''}\n"
+            
+            # Fetch Department Name
+            if emp.DepartmentId:
+                from database.models import Department
+                dept = db.query(Department).filter(Department.DepartmentId == emp.DepartmentId).first()
+                if dept:
+                    profile_str += f"- Department: {dept.DepartmentName}\n"
+            
             if emp.ManagerId:
                 manager = db.query(Employee).filter(Employee.EmployeeId == emp.ManagerId).first()
                 if manager:
