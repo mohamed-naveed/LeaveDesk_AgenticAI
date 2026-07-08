@@ -76,7 +76,7 @@ class LLMService:
                 ],
                 tools=tools,
                 tool_choice="auto",
-                max_tokens=100
+                max_tokens=50
             )
 
             msg = response.choices[0].message
@@ -93,8 +93,37 @@ class LLMService:
                 }
                 
         except Exception as e:
-            print(f"LLM Error: {e}. Falling back to _fallback_process_chat.")
+            print(f"LLM Error: {e}. Trying lightweight RAG LLM call.")
+            rag_response = self._rag_llm_call(text, context_str)
+            if rag_response:
+                return {
+                    "intent": "general_inquiry",
+                    "chat_response": rag_response
+                }
+            print("RAG LLM call also failed. Falling back to _fallback_process_chat.")
             return self._fallback_process_chat(text, context_str)
+
+    def _rag_llm_call(self, text: str, context_str: str) -> str:
+        try:
+            # A very minimal LLM query (no tools, max_tokens=35) to stay within tiny credit limits
+            response = self.client.chat.completions.create(
+                model=self.model_name,
+                messages=[
+                    {
+                        "role": "system",
+                        "content": (
+                            "You are LeaveDesk AI. Answer the user's question using the context. Keep it extremely brief (under 1 sentence).\n\n"
+                            f"Context:\n{context_str}"
+                        )
+                    },
+                    {"role": "user", "content": text}
+                ],
+                max_tokens=35
+            )
+            return response.choices[0].message.content
+        except Exception as e:
+            print(f"RAG LLM call failed: {e}")
+            return None
 
     def _fallback_process_chat(self, text: str, context_str: str) -> dict:
         text_lower = text.lower()

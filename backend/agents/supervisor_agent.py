@@ -316,7 +316,7 @@ class SupervisorAgent:
                     messages=messages,
                     tools=tools,
                     tool_choice="auto",
-                    max_tokens=100
+                    max_tokens=50
                 )
                 
                 msg = response.choices[0].message
