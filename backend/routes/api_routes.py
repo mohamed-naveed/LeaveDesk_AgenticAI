@@ -205,10 +205,10 @@ async def chat(payload: dict = Body(...), db: Session = Depends(get_db)):
         db=db
     )
     
+    msg = None
     if not result.get("success", True):
         msg = f"Failed to process request: {result.get('message', 'Unknown error')}"
-    else:
-        if 'status' in result and 'requested_days' in result:
+    elif 'status' in result and 'requested_days' in result:
             status = result.get('status', 'Processed')
             days = result.get('requested_days', '?')
             start_date = result.get('start_date')
@@ -288,10 +288,16 @@ async def chat(payload: dict = Body(...), db: Session = Depends(get_db)):
                 msg = reason or "All selected dates fall on weekends or holidays. No leave was applied."
             else:
                 msg = f"Status: {status}. {reason}"
-            
-# WebSocket notification removed
-        else:
-            msg = result.get('message') or result.get('response') or str(result)
+    elif result.get('chat_response'):
+        msg = result['chat_response']
+    elif result.get('response') and result.get('response') is not None:
+        msg = result['response']
+    elif result.get('message'):
+        msg = result['message']
+    elif result.get('success') is True:
+        msg = "Your request has been processed successfully."
+    else:
+        msg = "Something went wrong. Please try again."
 
     return {"response": msg}
 

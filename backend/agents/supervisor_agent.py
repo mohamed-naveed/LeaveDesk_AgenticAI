@@ -353,7 +353,7 @@ class SupervisorAgent:
                     messages=messages,
                     tools=tools,
                     tool_choice="auto",
-                    max_tokens=50
+                    max_tokens=1024
                 )
                 
                 msg = response.choices[0].message
