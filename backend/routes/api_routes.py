@@ -235,17 +235,19 @@ async def chat(payload: dict = Body(...), db: Session = Depends(get_db)):
             elif "provide" in reason.lower() or "missing" in reason.lower() or "unrecognized leave type" in reason.lower():
                 msg = "Please provide the leave type and reason for the leave. The system needs these details before checking balance, policy, overlap, and approval requirements."
             elif status == "Pending Manager Approval" and start_date and end_date:
+                date_str = f"on {start_date}" if start_date == end_date else f"from {start_date} to {end_date}"
                 if "who" in message.lower() or "approve" in message.lower():
-                    msg = f"Your {leave_type_name} request has been created and submitted for approval. Your reporting manager will approve this request. The manager has been notified."
+                    msg = f"Your {leave_type_name} request for {days} day(s) {date_str} has been created and submitted for approval. Your reporting manager will approve this request. The manager has been notified."
                 elif leave_type_name == "earned leave":
-                    msg = f"Your {leave_type_name} request has been created. The system calculated working days, checked your leave balance, verified no overlap, and confirmed team availability. The request is pending manager approval."
+                    msg = f"Your {leave_type_name} request for {days} day(s) {date_str} has been created. The system calculated working days, checked your leave balance, verified no overlap, and confirmed team availability. The request is pending manager approval."
                 else:
-                    msg = f"Your {leave_type_name} request has been created. The system calculated the working days by excluding weekends and holidays. Your balance is sufficient, no overlapping leave was found, and team availability is acceptable. Since {leave_type_name} requires manager approval, the request is now pending with your manager."
+                    msg = f"Your {leave_type_name} request for {days} day(s) {date_str} has been created. The system calculated the working days by excluding weekends and holidays. Your balance is sufficient, no overlapping leave was found, and team availability is acceptable. Since {leave_type_name} requires manager approval, the request is now pending with your manager."
             elif status == "Approved" and start_date and end_date:
+                date_str = f"on {start_date}" if start_date == end_date else f"from {start_date} to {end_date}"
                 if "half" in message.lower():
-                    msg = f"Your half-day {leave_type_name} request has been processed. The system verified that half-day leave is allowed, {leave_type_name} balance is available, and there is no overlap. The request is auto-approved if your policy allows auto-approval for half-day {leave_type_name}."
+                    msg = f"Your half-day {leave_type_name} request for {days} day(s) {date_str} has been processed. The system verified that half-day leave is allowed, {leave_type_name} balance is available, and there is no overlap. The request is auto-approved if your policy allows auto-approval for half-day {leave_type_name}."
                 else:
-                    msg = f"Your sick leave request for today has been created. The system checked your {leave_type_name} balance and {leave_type_name} policy. Since same-day {leave_type_name} is allowed and balance is available, the request is auto-approved or sent for manager approval based on company policy."
+                    msg = f"Your sick leave request for {days} day(s) {date_str} has been created. The system checked your {leave_type_name} balance and {leave_type_name} policy. Since same-day {leave_type_name} is allowed and balance is available, the request is auto-approved or sent for manager approval based on company policy."
             elif status == "No Action Required":
                 msg = reason or 'All selected dates fall on weekends or holidays.'
             else:
