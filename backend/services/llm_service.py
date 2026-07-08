@@ -631,19 +631,45 @@ class LLMService:
             res["start_date"] = dates_found[0]
             res["end_date"] = dates_found[0]
         else:
-            # Handle text dates like "july 10 to july 15" or "july 10 to 15"
-            pattern = r"(january|february|march|april|may|june|july|august|september|october|november|december|jan|feb|mar|apr|jun|jul|aug|sep|oct|nov|dec)\s+(\d{1,2})"
-            matches = re.findall(pattern, lower_text)
+            # Handle text dates like "july 10 to july 15" or "10 july to 14 july" or "10 to 14 july" or "july 10 to 14"
+            day_month_pattern = r"\b(\d{1,2})\s+(january|february|march|april|may|june|july|august|september|october|november|december|jan|feb|mar|apr|jun|jul|aug|sep|oct|nov|dec)\b"
+            month_day_pattern = r"\b(january|february|march|april|may|june|july|august|september|october|november|december|jan|feb|mar|apr|jun|jul|aug|sep|oct|nov|dec)\s+(\d{1,2})\b(?!\d)"
+            
             y = datetime.strptime(current_date, "%Y-%m-%d").year
-            if len(matches) >= 2:
-                m1, d1 = matches[0]
-                m2, d2 = matches[1]
+            
+            dm_matches = re.findall(day_month_pattern, lower_text)
+            md_matches = re.findall(month_day_pattern, lower_text)
+            
+            if len(dm_matches) >= 2:
+                d1, m1 = dm_matches[0]
+                d2, m2 = dm_matches[1]
                 res["start_date"] = f"{y}-{months[m1]:02d}-{int(d1):02d}"
                 res["end_date"] = f"{y}-{months[m2]:02d}-{int(d2):02d}"
-            elif len(matches) == 1:
-                m1, d1 = matches[0]
-                # Check for "july 10 to 15" style
-                to_match = re.search(rf"{m1}\s+{d1}\s+(?:to|through|until|-)\s+(\d{1,2})", lower_text)
+            elif len(md_matches) >= 2:
+                m1, d1 = md_matches[0]
+                m2, d2 = md_matches[1]
+                res["start_date"] = f"{y}-{months[m1]:02d}-{int(d1):02d}"
+                res["end_date"] = f"{y}-{months[m2]:02d}-{int(d2):02d}"
+            elif len(dm_matches) == 1:
+                d1, m1 = dm_matches[0]
+                res["start_date"] = f"{y}-{months[m1]:02d}-{int(d1):02d}"
+                # Check for "10 to 14 july" style
+                to_match = re.search(r"\b(\d{1,2})\s+(?:to|through|until|-)\s+" + rf"{d1}\s+{m1}", lower_text)
+                if to_match:
+                    d0 = to_match.group(1)
+                    res["start_date"] = f"{y}-{months[m1]:02d}-{int(d0):02d}"
+                    res["end_date"] = f"{y}-{months[m1]:02d}-{int(d1):02d}"
+                else:
+                    # Check for "10 july to 14" style
+                    to_match_2 = re.search(rf"{d1}\s+{m1}\s+(?:to|through|until|-)\s+(\d{{1,2}})\b(?!\d)", lower_text)
+                    if to_match_2:
+                        d2 = to_match_2.group(1)
+                        res["end_date"] = f"{y}-{months[m1]:02d}-{int(d2):02d}"
+                    else:
+                        res["end_date"] = f"{y}-{months[m1]:02d}-{int(d1):02d}"
+            elif len(md_matches) == 1:
+                m1, d1 = md_matches[0]
+                to_match = re.search(rf"{m1}\s+{d1}\s+(?:to|through|until|-)\s+(\d{{1,2}})\b(?!\d)", lower_text)
                 if to_match:
                     d2 = to_match.group(1)
                     res["start_date"] = f"{y}-{months[m1]:02d}-{int(d1):02d}"
