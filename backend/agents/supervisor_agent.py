@@ -60,7 +60,7 @@ class SupervisorAgent:
                 "type": "function",
                 "function": {
                     "name": "get_employee_profile",
-                    "description": "Retrieve the profile details of the employee, including full name, email, department, manager, and active status.",
+                    "description": "Get employee profile.",
                     "parameters": {
                         "type": "object",
                         "properties": {
@@ -74,12 +74,12 @@ class SupervisorAgent:
                 "type": "function",
                 "function": {
                     "name": "check_calendar",
-                    "description": "Analyze the start and end dates to calculate requested days, count working days (excluding holidays/weekends), and output specific day breakdowns.",
+                    "description": "Calculate days count.",
                     "parameters": {
                         "type": "object",
                         "properties": {
-                            "start_date": {"type": "string", "description": "Start date in YYYY-MM-DD format"},
-                            "end_date": {"type": "string", "description": "End date in YYYY-MM-DD format"}
+                            "start_date": {"type": "string"},
+                            "end_date": {"type": "string"}
                         },
                         "required": ["start_date", "end_date"]
                     }
@@ -89,7 +89,7 @@ class SupervisorAgent:
                 "type": "function",
                 "function": {
                     "name": "get_leave_balance",
-                    "description": "Fetch the employee's current leave balance (allocated, used, pending, remaining) for a specific leave type ID.",
+                    "description": "Get leave balance.",
                     "parameters": {
                         "type": "object",
                         "properties": {
@@ -104,7 +104,7 @@ class SupervisorAgent:
                 "type": "function",
                 "function": {
                     "name": "get_leave_policy",
-                    "description": "Retrieve leave policy constraints (notice period, medical certificate required threshold, auto-approval days, etc.) for a specific leave type ID.",
+                    "description": "Get policy constraints.",
                     "parameters": {
                         "type": "object",
                         "properties": {
@@ -118,13 +118,13 @@ class SupervisorAgent:
                 "type": "function",
                 "function": {
                     "name": "check_leave_overlap",
-                    "description": "Check if the employee has any existing overlapping leave requests within the requested date range.",
+                    "description": "Check request overlap.",
                     "parameters": {
                         "type": "object",
                         "properties": {
                             "employee_id": {"type": "integer"},
-                            "start_date": {"type": "string", "description": "YYYY-MM-DD"},
-                            "end_date": {"type": "string", "description": "YYYY-MM-DD"}
+                            "start_date": {"type": "string"},
+                            "end_date": {"type": "string"}
                         },
                         "required": ["employee_id", "start_date", "end_date"]
                     }
@@ -134,14 +134,14 @@ class SupervisorAgent:
                 "type": "function",
                 "function": {
                     "name": "check_team_availability",
-                    "description": "Calculate department absence rates during the requested date range and check if department threshold is exceeded.",
+                    "description": "Check team threshold.",
                     "parameters": {
                         "type": "object",
                         "properties": {
                             "department_id": {"type": "integer"},
-                            "start_date": {"type": "string", "description": "YYYY-MM-DD"},
-                            "end_date": {"type": "string", "description": "YYYY-MM-DD"},
-                            "threshold_percent": {"type": "number", "description": "Department absence threshold percent"}
+                            "start_date": {"type": "string"},
+                            "end_date": {"type": "string"},
+                            "threshold_percent": {"type": "number"}
                         },
                         "required": ["department_id", "start_date", "end_date", "threshold_percent"]
                     }
@@ -151,11 +151,11 @@ class SupervisorAgent:
                 "type": "function",
                 "function": {
                     "name": "make_leave_decision",
-                    "description": "Execute deterministic validation rules to determine the recommendation status: Approved, Rejected, or Pending Manager Approval.",
+                    "description": "Decide approval status.",
                     "parameters": {
                         "type": "object",
                         "properties": {
-                            "data_json": {"type": "string", "description": "JSON serialized validation facts containing keys: employee_active, remaining_balance, working_days, notice_days, min_notice_days, medical_certificate_after_days, allow_half_day, has_half_day, auto_approval_max_days, overlap_found, threshold_exceeded, monthly_limit_exceeded"}
+                            "data_json": {"type": "string"}
                         },
                         "required": ["data_json"]
                     }
@@ -165,11 +165,11 @@ class SupervisorAgent:
                 "type": "function",
                 "function": {
                     "name": "resolve_leave_type_id",
-                    "description": "Look up and resolve a leave type's numerical ID by its name or keyword (e.g. Casual Leave, Sick Leave).",
+                    "description": "Resolve leave type ID.",
                     "parameters": {
                         "type": "object",
                         "properties": {
-                            "leave_type_name": {"type": "string", "description": "Name or keyword of the leave type"}
+                            "leave_type_name": {"type": "string"}
                         },
                         "required": ["leave_type_name"]
                     }
@@ -179,17 +179,17 @@ class SupervisorAgent:
                 "type": "function",
                 "function": {
                     "name": "create_leave_request_record",
-                    "description": "Persist the validated leave request and daily calendar records to the database. Returns the generated leave_request_id.",
+                    "description": "Save leave request.",
                     "parameters": {
                         "type": "object",
                         "properties": {
                             "employee_id": {"type": "integer"},
                             "leave_type_id": {"type": "integer"},
-                            "start_date": {"type": "string", "description": "YYYY-MM-DD"},
-                            "end_date": {"type": "string", "description": "YYYY-MM-DD"},
+                            "start_date": {"type": "string"},
+                            "end_date": {"type": "string"},
                             "requested_days": {"type": "number"},
                             "reason": {"type": "string"},
-                            "status": {"type": "string", "description": "Determined status e.g. Approved, Pending Manager Approval"},
+                            "status": {"type": "string"},
                             "agent_decision": {"type": "string"},
                             "agent_reason": {"type": "string"}
                         },
@@ -201,7 +201,7 @@ class SupervisorAgent:
                 "type": "function",
                 "function": {
                     "name": "create_approval_task",
-                    "description": "Create a manager approval record for the request in the database if manager sign-off is required.",
+                    "description": "Create approval task.",
                     "parameters": {
                         "type": "object",
                         "properties": {
@@ -216,7 +216,7 @@ class SupervisorAgent:
                 "type": "function",
                 "function": {
                     "name": "send_notification",
-                    "description": "Log/send notification to the employee regarding their request's status.",
+                    "description": "Send status update.",
                     "parameters": {
                         "type": "object",
                         "properties": {
@@ -233,14 +233,14 @@ class SupervisorAgent:
                 "type": "function",
                 "function": {
                     "name": "check_monthly_limit",
-                    "description": "Calculate if the current request exceeds the department limit of 5 days in a single month for the employee.",
+                    "description": "Check monthly limit.",
                     "parameters": {
                         "type": "object",
                         "properties": {
                             "employee_id": {"type": "integer"},
                             "leave_type_id": {"type": "integer"},
-                            "start_date": {"type": "string", "description": "YYYY-MM-DD"},
-                            "end_date": {"type": "string", "description": "YYYY-MM-DD"}
+                            "start_date": {"type": "string"},
+                            "end_date": {"type": "string"}
                         },
                         "required": ["employee_id", "leave_type_id", "start_date", "end_date"]
                     }
@@ -250,16 +250,16 @@ class SupervisorAgent:
                 "type": "function",
                 "function": {
                     "name": "submit_validation_result",
-                    "description": "Terminate the agent loop and submit the final request status, requested days, and remaining balance details.",
+                    "description": "Return final result.",
                     "parameters": {
                         "type": "object",
                         "properties": {
-                            "status": {"type": "string", "description": "Approved, Pending Manager Approval, Rejected"},
-                            "reason": {"type": "string", "description": "Reason details"},
+                            "status": {"type": "string"},
+                            "reason": {"type": "string"},
                             "requested_days": {"type": "number"},
                             "remaining_balance": {"type": "number"},
-                            "start_date": {"type": "string", "description": "YYYY-MM-DD"},
-                            "end_date": {"type": "string", "description": "YYYY-MM-DD"}
+                            "start_date": {"type": "string"},
+                            "end_date": {"type": "string"}
                         },
                         "required": ["status", "reason", "requested_days", "remaining_balance", "start_date", "end_date"]
                     }
@@ -954,6 +954,19 @@ class SupervisorAgent:
         emp = db.query(Employee).filter(Employee.EmployeeId == employee_id).first()
         role = emp.Role if emp else "employee"
 
+        # Build Employee Profile block
+        profile_str = "Employee Profile:\n"
+        if emp:
+            profile_str += f"- Full Name: {emp.FullName}\n"
+            profile_str += f"- Employee Code: {emp.EmployeeCode}\n"
+            profile_str += f"- Email: {emp.Email}\n"
+            profile_str += f"- Role: {emp.Role}\n"
+            profile_str += f"- Joining Date: {emp.JoiningDate.strftime('%Y-%m-%d') if emp.JoiningDate else ''}\n"
+            if emp.ManagerId:
+                manager = db.query(Employee).filter(Employee.EmployeeId == emp.ManagerId).first()
+                if manager:
+                    profile_str += f"- Manager: {manager.FullName}\n"
+
         # Fetch Balances
         balances = db.query(LeaveBalance, LeaveType).join(LeaveType, LeaveBalance.LeaveTypeId == LeaveType.LeaveTypeId).filter(LeaveBalance.EmployeeId == employee_id).all()
         agg_balances = {}
@@ -963,7 +976,7 @@ class SupervisorAgent:
                 agg_balances[name] = 0
             agg_balances[name] += float(bal.AllocatedDays - bal.UsedDays)
         
-        context_str = f"Employee Role: {role}\n\nEmployee Balances:\n"
+        context_str = f"Employee Role: {role}\n\n{profile_str}\nEmployee Balances:\n"
         for k, v in agg_balances.items():
             context_str += f"- {k.title()} Leave: {v} days remaining\n"
         
@@ -991,7 +1004,7 @@ class SupervisorAgent:
             LeaveType, LeaveRequest.LeaveTypeId == LeaveType.LeaveTypeId
         ).filter(
             LeaveRequest.EmployeeId == employee_id
-        ).order_by(LeaveRequest.StartDate.desc()).limit(5).all()
+        ).order_by(LeaveRequest.StartDate.desc()).limit(3).all()
         
         context_str += "\nEmployee Recent Leave History:\n"
         if history:
@@ -1088,7 +1101,7 @@ class SupervisorAgent:
                     Employee.DepartmentId == emp.DepartmentId,
                     Employee.EmployeeId != employee_id,
                     LeaveRequest.Status.in_(["Approved", "Pending Manager Approval"])
-                ).order_by(LeaveRequest.StartDate.desc()).limit(5).all()
+                ).order_by(LeaveRequest.StartDate.desc()).limit(3).all()
                 
                 context_str += "\nTeam/Teammates Recent Leave History:\n"
                 if team_history:
@@ -1101,7 +1114,7 @@ class SupervisorAgent:
         from database.models import Holiday
         holidays = db.query(Holiday).filter(
             Holiday.HolidayDate >= date.today()
-        ).order_by(Holiday.HolidayDate.asc()).limit(10).all()
+        ).order_by(Holiday.HolidayDate.asc()).limit(5).all()
         
         context_str += "\nUpcoming Company Holidays:\n"
         if holidays:

@@ -197,9 +197,105 @@ class LLMService:
                         "intent": "general_inquiry",
                         "chat_response": f"Here is the leave history for your managed employees:\n{hist_section}"
                     }
+
+        # RAG-style query fallbacks for employees and managers
+        if "manager" in text_lower and not is_manager:
+            for line in context_str.split("\n"):
+                if line.strip().lower().startswith("- manager:"):
+                    manager_name = line.split(":", 1)[1].strip()
+                    return {
+                        "intent": "general_inquiry",
+                        "chat_response": f"Your manager is {manager_name}."
+                    }
+            return {
+                "intent": "general_inquiry",
+                "chat_response": "I couldn't find your manager in your employee profile."
+            }
+
+        if any(w in text_lower for w in ["employee code", "my code", "employee_code"]):
+            for line in context_str.split("\n"):
+                if line.strip().lower().startswith("- employee code:"):
+                    code = line.split(":", 1)[1].strip()
+                    return {
+                        "intent": "general_inquiry",
+                        "chat_response": f"Your employee code is {code}."
+                    }
+            return {
+                "intent": "general_inquiry",
+                "chat_response": "I couldn't find your employee code in your employee profile."
+            }
+
+        if any(w in text_lower for w in ["join", "joining"]):
+            for line in context_str.split("\n"):
+                if line.strip().lower().startswith("- joining date:"):
+                    jdate = line.split(":", 1)[1].strip()
+                    return {
+                        "intent": "general_inquiry",
+                        "chat_response": f"You joined the company on {jdate}."
+                    }
+            return {
+                "intent": "general_inquiry",
+                "chat_response": "I couldn't find your joining date in your employee profile."
+            }
+
+        if any(w in text_lower for w in ["status of", "my leave requests", "my requests", "applied leaves"]):
+            history_lines = []
+            capture = False
+            for line in context_str.split("\n"):
+                if "Employee Recent Leave History:" in line or "Your Pending Requests:" in line:
+                    capture = True
+                    history_lines.append(line)
+                    continue
+                if capture:
+                    if line.strip() == "" or "Company Leave Policy:" in line or "Upcoming Company Holidays:" in line:
+                        break
+                    history_lines.append(line)
+            if history_lines:
+                return {
+                    "intent": "general_inquiry",
+                    "chat_response": "Here is the status of your recent leave requests:\n" + "\n".join(history_lines)
+                }
+            return {
+                "intent": "general_inquiry",
+                "chat_response": "No past or pending leave requests found."
+            }
+
+        if "last approved" in text_lower:
+            for line in context_str.split("\n"):
+                if "status: approved" in line.lower() and "recent leave history" not in line.lower():
+                    return {
+                        "intent": "general_inquiry",
+                        "chat_response": f"Your last approved leave was: {line.strip('- ')}"
+                    }
+            return {
+                "intent": "general_inquiry",
+                "chat_response": "You don't have any approved leave requests in your recent history."
+            }
+
+        if "holiday" in text_lower or "holidays" in text_lower:
+            holiday_lines = []
+            capture = False
+            for line in context_str.split("\n"):
+                if "Upcoming Company Holidays:" in line:
+                    capture = True
+                    holiday_lines.append(line)
+                    continue
+                if capture:
+                    if line.strip() == "" or "Company Leave Policy:" in line or "Employee Balances:" in line:
+                        break
+                    holiday_lines.append(line)
+            if holiday_lines:
+                return {
+                    "intent": "general_inquiry",
+                    "chat_response": "Here are the upcoming company holidays:\n" + "\n".join(holiday_lines)
+                }
+            return {
+                "intent": "general_inquiry",
+                "chat_response": "No upcoming company holidays found."
+            }
         
         # Check if the user is attempting to apply for a leave
-        has_question_kw = any(w in text_lower for w in ["history", "past", "last", "previous", "holiday", "policy", "policies", "rule", "rules", "balance", "balances", "how much", "remaining", "pending", "approval", "limit", "limits"])
+        has_question_kw = any(w in text_lower for w in ["history", "past", "last", "previous", "holiday", "holidays", "policy", "policies", "olicies", "rule", "rules", "balance", "balances", "how much", "remaining", "pending", "approval", "limit", "limits", "manager", "code", "join", "joining", "status", "requests"])
         is_applying = (
             any(w in text_lower for w in ["apply", "appply", "aply", "applying", "request", "want", "need", "take", "book", "tomorrow", "starting", "in ", "day", "leave"]) 
             or any(lt in text_lower for lt in ["casual", "sick", "annual", "unpaid"])
