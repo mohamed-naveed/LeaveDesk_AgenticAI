@@ -249,6 +249,32 @@ class SupervisorAgent:
             {
                 "type": "function",
                 "function": {
+                    "name": "resolve_manager_action",
+                    "description": "Approve or reject a pending leave request for an employee. Call this ONLY when the caller is a manager and explicitly requests to approve, reject, accept, deny, or cancel an employee's pending leave request.",
+                    "parameters": {
+                        "type": "object",
+                        "properties": {
+                            "leave_request_id": {
+                                "type": "integer",
+                                "description": "The ID of the leave request to approve or reject."
+                            },
+                            "decision": {
+                                "type": "string",
+                                "enum": ["Approved", "Rejected"],
+                                "description": "Decision to apply: Approved or Rejected."
+                            },
+                            "comments": {
+                                "type": "string",
+                                "description": "Optional comments for the decision."
+                            }
+                        },
+                        "required": ["leave_request_id", "decision"]
+                    }
+                }
+            },
+            {
+                "type": "function",
+                "function": {
                     "name": "submit_validation_result",
                     "description": "Return final result.",
                     "parameters": {
@@ -293,7 +319,8 @@ class SupervisorAgent:
                         f"11. If status is Pending Manager Approval, also call `create_approval_task`.\n"
                         f"12. Call `send_notification` to notify the user.\n"
                         f"13. Finally, call `submit_validation_result` to terminate and return the final results.\n\n"
-                        f"If the user's message is a general inquiry (such as asking about their leave balances, leave policies, past leave history, pending requests, teammates' leaves, or upcoming holidays), you do not need to call any validation tools. Just read the relevant section in the Context block above and reply directly to the user. NOTE: Employees (Role: employee) are NOT authorized to view or query teammates' leaves. If the Employee Role in the context is 'employee' and they ask about teammate or other team members' leaves, you must refuse and state: 'You are not authorized to view teammate leaves. Employees can only view their own leave balances and past leaves.'"
+                        f"If the user's message is a general inquiry (such as asking about their leave balances, leave policies, past leave history, pending requests, teammates' leaves, or upcoming holidays), you do not need to call any validation tools. Just read the relevant section in the Context block above and reply directly to the user. NOTE: Employees (Role: employee) are NOT authorized to view or query teammates' leaves. If the Employee Role in the context is 'employee' and they ask about teammate or other team members' leaves, you must refuse and state: 'You are not authorized to view teammate leaves. Employees can only view their own leave balances and past leaves.'\n"
+                        f"If the caller is a manager and explicitly requests to approve, reject, accept, deny, or cancel an employee's pending leave request, you MUST call `resolve_manager_action` to apply the decision to the database request."
                     )
                 },
                 {
@@ -588,6 +615,25 @@ class SupervisorAgent:
                             db=db
                         )
                         
+                    elif tool_name == "resolve_manager_action":
+                        try:
+                            from routes.api_routes import handle_manager_action
+                            class DummyBackgroundTasks:
+                                def add_task(self, func, *args, **kwargs):
+                                    func(*args, **kwargs)
+                            
+                            handle_manager_action(
+                                db=db,
+                                background_tasks=DummyBackgroundTasks(),
+                                leave_request_id=args.get("leave_request_id"),
+                                manager_id=employee_id,
+                                decision=args.get("decision"),
+                                comments=args.get("comments", "Actioned via AI Leave Desk Chat")
+                            )
+                            tool_result = {"success": True, "message": f"Successfully {args.get('decision').lower()} leave request ID {args.get('leave_request_id')}."}
+                        except Exception as e:
+                            tool_result = {"error": f"Failed manager action: {str(e)}"}
+
                     elif tool_name == "submit_validation_result":
                         loop_context["validation_result"] = args
                         tool_result = {"success": True}
@@ -685,6 +731,76 @@ class SupervisorAgent:
                     "success": True,
                     "response": llm_result.get("chat_response", "I could not generate a response.")
                 }
+            
+            if llm_result.get("intent") == "manager_action":
+                decision = llm_result.get("decision")
+                rid = llm_result.get("request_id")
+                target_emp_id = llm_result.get("target_employee_id")
+                target_emp_name = llm_result.get("target_employee_name")
+                
+                target_req = None
+                if rid:
+                    target_req = db.query(LeaveRequest).filter(
+                        LeaveRequest.LeaveRequestId == rid,
+                        LeaveRequest.Status == "Pending Manager Approval"
+                    ).first()
+                elif target_emp_id:
+                    target_req = db.query(LeaveRequest).filter(
+                        LeaveRequest.EmployeeId == target_emp_id,
+                        LeaveRequest.Status == "Pending Manager Approval"
+                    ).order_by(LeaveRequest.StartDate.desc()).first()
+                else:
+                    # Find all pending requests managed by this manager
+                    pending = db.query(LeaveRequest, Employee).join(
+                        Employee, LeaveRequest.EmployeeId == Employee.EmployeeId
+                    ).filter(
+                        Employee.ManagerId == employee_id,
+                        LeaveRequest.Status == "Pending Manager Approval"
+                    ).all()
+                    if len(pending) == 1:
+                        target_req = pending[0][0]
+                    elif len(pending) > 1:
+                        req_list_str = "\n".join([f"- Request ID {r[0].LeaveRequestId} by {r[1].FullName}: {r[0].RequestedDays} day(s) from {r[0].StartDate} to {r[0].EndDate}" for r in pending])
+                        return {
+                            "success": True,
+                            "response": f"You have multiple pending requests. Please specify which Request ID you want to {decision.lower()}:\n{req_list_str}"
+                        }
+                
+                if target_req:
+                    from routes.api_routes import handle_manager_action
+                    class DummyBackgroundTasks:
+                        def add_task(self, func, *args, **kwargs):
+                            func(*args, **kwargs)
+                    try:
+                        handle_manager_action(
+                            db=db,
+                            background_tasks=DummyBackgroundTasks(),
+                            leave_request_id=target_req.LeaveRequestId,
+                            manager_id=employee_id,
+                            decision=decision,
+                            comments="Actioned via AI Leave Desk Chat"
+                        )
+                        requester = db.query(Employee).filter(Employee.EmployeeId == target_req.EmployeeId).first()
+                        req_name = requester.FullName if requester else "the employee"
+                        return {
+                            "success": True,
+                            "response": f"Successfully {decision.lower()} leave request ID {target_req.LeaveRequestId} for {req_name}."
+                        }
+                    except Exception as ex:
+                        return {
+                            "success": False,
+                            "message": f"Failed to {decision.lower()} request ID {target_req.LeaveRequestId}: {str(ex)}"
+                        }
+                else:
+                    if target_emp_name:
+                        return {
+                            "success": True,
+                            "response": f"No pending leave requests found for {target_emp_name}."
+                        }
+                    return {
+                        "success": True,
+                        "response": f"Could not find any pending leave requests to {decision.lower()}."
+                    }
                 
             llm_details = llm_result.get("leave_details", {})
             

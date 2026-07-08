@@ -95,7 +95,7 @@ class LLMService:
         except Exception as e:
             print(f"LLM Error: {e}. Checking query type for fallback.")
             text_lower = text.lower()
-            has_q_kw = any(w in text_lower for w in ["history", "histroy", "histry", "past", "last", "previous", "holiday", "holidays", "policy", "policies", "olicies", "rule", "rules", "balance", "balances", "how much", "remaining", "pending", "approval", "limit", "limits", "manager", "code", "join", "joining", "status", "request", "requests", "show", "list", "who", "when", "what", "where", "email", "department", "details", "profile", "info", "mt", "team", "teammate", "teammates", "colleague", "colleagues", "others", "other"])
+            has_q_kw = any(w in text_lower for w in ["history", "histroy", "histry", "past", "last", "previous", "holiday", "holidays", "policy", "policies", "olicies", "rule", "rules", "balance", "balances", "how much", "remaining", "pending", "approval", "limit", "limits", "manager", "code", "join", "joining", "status", "request", "requests", "show", "list", "who", "when", "what", "where", "email", "department", "details", "profile", "info", "mt", "team", "teammate", "teammates", "colleague", "colleagues", "others", "other", "approve", "accept", "reject", "deny", "agree", "decline", "disapprove"])
             is_applying_query = (
                 any(w in text_lower for w in ["apply", "appply", "aply", "applying", "request", "want", "need", "take", "book", "tomorrow", "starting", "in ", "day", "leave"]) 
                 or any(lt in text_lower for lt in ["casual", "sick", "annual", "unpaid"])
@@ -176,6 +176,21 @@ class LLMService:
 
             # Check if query is about a specific employee's id/email/profile info
             is_info_query = any(w in text_lower for w in ["id", "code", "email", "profile", "details", "join", "joining"])
+            
+            # Check if manager is attempting to approve/reject a request
+            is_approval = any(w in text_lower for w in ["approve", "accept", "agree"])
+            is_rejection = any(w in text_lower for w in ["reject", "deny", "disapprove", "decline"])
+            if (is_approval or is_rejection) and is_manager:
+                req_id_match = re.search(r"(?:request\s*|id\s*)(\d+)", text_lower)
+                rid = int(req_id_match.group(1)) if req_id_match else None
+                return {
+                    "intent": "manager_action",
+                    "decision": "Approved" if is_approval else "Rejected",
+                    "request_id": rid,
+                    "target_employee_id": specific_employee["id"] if specific_employee else None,
+                    "target_employee_name": specific_employee["name"] if specific_employee else None
+                }
+
             if specific_employee and is_info_query:
                 me_section = extract_section(context_str, "Managed Employees:", ["Managed Employees Leave Balances:"])
                 matching_line = None
@@ -399,7 +414,7 @@ class LLMService:
             }
         
         # Check if the user is attempting to apply for a leave
-        has_question_kw = any(w in text_lower for w in ["history", "histroy", "histry", "past", "last", "previous", "holiday", "holidays", "policy", "policies", "olicies", "rule", "rules", "balance", "balances", "how much", "remaining", "pending", "approval", "limit", "limits", "manager", "code", "join", "joining", "status", "request", "requests", "show", "list", "who", "when", "what", "where", "email", "department", "details", "profile", "info", "mt", "team", "teammate", "teammates", "colleague", "colleagues", "others", "other"])
+        has_question_kw = any(w in text_lower for w in ["history", "histroy", "histry", "past", "last", "previous", "holiday", "holidays", "policy", "policies", "olicies", "rule", "rules", "balance", "balances", "how much", "remaining", "pending", "approval", "limit", "limits", "manager", "code", "join", "joining", "status", "request", "requests", "show", "list", "who", "when", "what", "where", "email", "department", "details", "profile", "info", "mt", "team", "teammate", "teammates", "colleague", "colleagues", "others", "other", "approve", "accept", "reject", "deny", "agree", "decline", "disapprove"])
         is_applying = (
             any(w in text_lower for w in ["apply", "appply", "aply", "applying", "request", "want", "need", "take", "book", "tomorrow", "starting", "in ", "day", "leave"]) 
             or any(lt in text_lower for lt in ["casual", "sick", "annual", "unpaid"])
