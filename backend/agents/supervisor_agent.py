@@ -1050,7 +1050,8 @@ class SupervisorAgent:
                 if managed_employees:
                     context_str += f"Total managed employees: {len(managed_employees)}\n"
                     for me in managed_employees:
-                        context_str += f"- {me.FullName} (ID: {me.EmployeeId}, Email: {me.Email})\n"
+                        joining_date_str = me.JoiningDate.strftime('%Y-%m-%d') if me.JoiningDate else ''
+                        context_str += f"- {me.FullName} (ID: {me.EmployeeId}, Email: {me.Email}, Role: {me.Role}, Joining Date: {joining_date_str})\n"
                 else:
                     context_str += "- No managed employees found.\n"
                 
