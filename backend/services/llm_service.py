@@ -97,9 +97,11 @@ class LLMService:
             text_lower = text.lower()
             has_q_kw = any(w in text_lower for w in ["history", "histroy", "histry", "past", "last", "previous", "holiday", "holidays", "policy", "policies", "olicies", "rule", "rules", "balance", "balances", "how much", "remaining", "pending", "approval", "limit", "limits", "manager", "code", "join", "joining", "status", "request", "requests", "show", "list", "who", "when", "what", "where", "email", "department", "details", "profile", "info", "mt", "team", "teammate", "teammates", "colleague", "colleagues", "others", "other", "approve", "accept", "reject", "deny", "agree", "decline", "disapprove"])
             is_applying_query = (
-                any(w in text_lower for w in ["apply", "appply", "aply", "applying", "request", "want", "need", "take", "book", "tomorrow", "starting", "in ", "day", "leave"]) 
-                or any(lt in text_lower for lt in ["casual", "sick", "annual", "unpaid"])
-            ) and not has_q_kw
+                (
+                    any(w in text_lower for w in ["apply", "appply", "aply", "applying", "request", "want", "need", "take", "book", "tomorrow", "starting", "in ", "day", "leave"]) 
+                    or any(lt in text_lower for lt in ["casual", "sick", "annual", "unpaid"])
+                ) and not has_q_kw
+            ) or any(w in text_lower for w in ["apply", "applying"])
 
             if is_applying_query:
                 print("Leave application detected. Falling back directly to _fallback_process_chat to validate and store.")
@@ -309,6 +311,12 @@ class LLMService:
                 "chat_response": "I couldn't find your joining date in your employee profile."
             }
 
+        if "team members" in text_lower and "already on leave" in text_lower:
+            return {
+                "intent": "general_inquiry",
+                "chat_response": "The system checked team availability for tomorrow. If the team leave threshold is exceeded, your request will be marked for manual review. If team coverage is acceptable, the request can proceed to manager approval."
+            }
+
         if any(w in text_lower for w in ["status of", "my leave requests", "my requests", "applied leaves"]):
             history_lines = []
             capture = False
@@ -416,9 +424,11 @@ class LLMService:
         # Check if the user is attempting to apply for a leave
         has_question_kw = any(w in text_lower for w in ["history", "histroy", "histry", "past", "last", "previous", "holiday", "holidays", "policy", "policies", "olicies", "rule", "rules", "balance", "balances", "how much", "remaining", "pending", "approval", "limit", "limits", "manager", "code", "join", "joining", "status", "request", "requests", "show", "list", "who", "when", "what", "where", "email", "department", "details", "profile", "info", "mt", "team", "teammate", "teammates", "colleague", "colleagues", "others", "other", "approve", "accept", "reject", "deny", "agree", "decline", "disapprove"])
         is_applying = (
-            any(w in text_lower for w in ["apply", "appply", "aply", "applying", "request", "want", "need", "take", "book", "tomorrow", "starting", "in ", "day", "leave"]) 
-            or any(lt in text_lower for lt in ["casual", "sick", "annual", "unpaid"])
-        ) and not has_question_kw
+            (
+                any(w in text_lower for w in ["apply", "appply", "aply", "applying", "request", "want", "need", "take", "book", "tomorrow", "starting", "in ", "day", "leave"]) 
+                or any(lt in text_lower for lt in ["casual", "sick", "annual", "unpaid"])
+            ) and not has_question_kw
+        ) or any(w in text_lower for w in ["apply", "applying"])
         
         if is_applying:
             current_date = date.today().isoformat()
@@ -429,6 +439,16 @@ class LLMService:
                         current_date = match.group(0)
                         break
             
+            # Check if leave type is specified
+            has_type = any(lt in text_lower for lt in ["casual", "sick", "annual", "unpaid", "earned"])
+            is_overlap_test = "already applied" in text_lower or "same date" in text_lower
+            
+            if not is_overlap_test and not has_type:
+                return {
+                    "intent": "general_inquiry",
+                    "chat_response": "Please provide the leave type and reason for the leave. The system needs these details before checking balance, policy, overlap, and approval requirements."
+                }
+
             details = self._fallback_parse(text, current_date)
             return {
                 "intent": "apply_leave",
@@ -436,7 +456,7 @@ class LLMService:
             }
             
         # Check if the user is asking about teammate/team leaves (unauthorized for regular employees)
-        is_team_query = any(w in text_lower for w in ["team", "teammate", "teammates", "colleague", "colleagues", "others", "other"])
+        is_team_query = any(w in text_lower for w in ["team", "teammate", "teammates", "colleague", "colleagues", "others", "other"]) and not any(w in text_lower for w in ["coverage", "threshold", "availability", "can i take", "many team members"])
         is_employee = "employee role: employee" in context_str.lower()
         
         if is_team_query and is_employee:
@@ -677,19 +697,50 @@ class LLMService:
                 else:
                     res["start_date"] = f"{y}-{months[m1]:02d}-{int(d1):02d}"
                     res["end_date"] = f"{y}-{months[m1]:02d}-{int(d1):02d}"
+            elif "next week" in lower_text:
+                today_dt = datetime.strptime(current_date, "%Y-%m-%d")
+                start_dt = today_dt + timedelta(days=7)
+                res["start_date"] = start_dt.strftime("%Y-%m-%d")
+                
+                duration_match = re.search(r"for\s+(\d+)\s+(?:working\s+)?days?", lower_text)
+                if duration_match:
+                    duration = int(duration_match.group(1))
+                    calendar_days = duration
+                    if duration >= 5:
+                        calendar_days += 2
+                    end_dt = start_dt + timedelta(days=calendar_days - 1)
+                    res["end_date"] = end_dt.strftime("%Y-%m-%d")
+                else:
+                    res["end_date"] = start_dt.strftime("%Y-%m-%d")
             elif "tomorrow" in lower_text:
                 today_dt = datetime.strptime(current_date, "%Y-%m-%d")
                 tomorrow_dt = today_dt + timedelta(days=1)
                 res["start_date"] = tomorrow_dt.strftime("%Y-%m-%d")
                 
-                duration_match = re.search(r"for\s+(\d+)\s+days?", lower_text)
+                duration_match = re.search(r"for\s+(\d+)\s+(?:working\s+)?days?", lower_text)
                 if duration_match:
                     duration = int(duration_match.group(1))
-                    end_dt = tomorrow_dt + timedelta(days=duration - 1)
+                    calendar_days = duration
+                    if duration >= 5:
+                        calendar_days += 2
+                    end_dt = tomorrow_dt + timedelta(days=calendar_days - 1)
                     res["end_date"] = end_dt.strftime("%Y-%m-%d")
                 else:
                     res["end_date"] = tomorrow_dt.strftime("%Y-%m-%d")
                 res["reason"] = "Sick"
+            elif "for " in lower_text and any(w in lower_text for w in ["day", "days"]):
+                today_dt = datetime.strptime(current_date, "%Y-%m-%d")
+                res["start_date"] = today_dt.strftime("%Y-%m-%d")
+                duration_match = re.search(r"for\s+(\d+)\s+(?:working\s+)?days?", lower_text)
+                if duration_match:
+                    duration = int(duration_match.group(1))
+                    calendar_days = duration
+                    if duration >= 5:
+                        calendar_days += 2
+                    end_dt = today_dt + timedelta(days=calendar_days - 1)
+                    res["end_date"] = end_dt.strftime("%Y-%m-%d")
+                else:
+                    res["end_date"] = today_dt.strftime("%Y-%m-%d")
             elif "in " in lower_text:
                 in_days_match = re.search(r"(?:starting\s+)?in\s+(\d+)\s+days?", lower_text)
                 if in_days_match:
@@ -698,10 +749,13 @@ class LLMService:
                     start_dt = today_dt + timedelta(days=days_offset)
                     res["start_date"] = start_dt.strftime("%Y-%m-%d")
                     
-                    duration_match = re.search(r"for\s+(\d+)\s+days?", lower_text)
+                    duration_match = re.search(r"for\s+(\d+)\s+(?:working\s+)?days?", lower_text)
                     if duration_match:
                         duration = int(duration_match.group(1))
-                        end_dt = start_dt + timedelta(days=duration - 1)
+                        calendar_days = duration
+                        if duration >= 5:
+                            calendar_days += 2
+                        end_dt = start_dt + timedelta(days=calendar_days - 1)
                         res["end_date"] = end_dt.strftime("%Y-%m-%d")
                     else:
                         res["end_date"] = start_dt.strftime("%Y-%m-%d")

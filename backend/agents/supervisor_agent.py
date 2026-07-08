@@ -320,7 +320,17 @@ class SupervisorAgent:
                         f"12. Call `send_notification` to notify the user.\n"
                         f"13. Finally, call `submit_validation_result` to terminate and return the final results.\n\n"
                         f"If the user's message is a general inquiry (such as asking about their leave balances, leave policies, past leave history, pending requests, teammates' leaves, or upcoming holidays), you do not need to call any validation tools. Just read the relevant section in the Context block above and reply directly to the user. NOTE: Employees (Role: employee) are NOT authorized to view or query teammates' leaves. If the Employee Role in the context is 'employee' and they ask about teammate or other team members' leaves, you must refuse and state: 'You are not authorized to view teammate leaves. Employees can only view their own leave balances and past leaves.'\n"
-                        f"If the caller is a manager and explicitly requests to approve, reject, accept, deny, or cancel an employee's pending leave request, you MUST call `resolve_manager_action` to apply the decision to the database request."
+                        f"If the caller is a manager and explicitly requests to approve, reject, accept, deny, or cancel an employee's pending leave request, you MUST call `resolve_manager_action` to apply the decision to the database request.\n\n"
+                        f"Response Guidelines (Apply when returning final validation results or conversational replies):\n"
+                        f"- If a casual/earned leave request is successfully created and pending manager approval: 'Your [leave type] request has been created. The system calculated the working days by excluding weekends and holidays. Your balance is sufficient, no overlapping leave was found, and team availability is acceptable. Since [leave type] requires manager approval, the request is now pending with your manager.'\n"
+                        f"- If a sick leave request is successfully created: 'Your sick leave request for today has been created. The system checked your sick leave balance and sick leave policy. Since same-day sick leave is allowed and balance is available, the request is auto-approved or sent for manager approval based on company policy.'\n"
+                        f"- If a half-day sick leave request is successfully created: 'Your half-day sick leave request has been processed. The system verified that half-day leave is allowed, sick leave balance is available, and there is no overlap. The request is auto-approved if your policy allows auto-approval for half-day sick leave.'\n"
+                        f"- If a request exceeds the maximum allowed days per request: 'Your request requires manual review because the requested leave exceeds the maximum casual leave allowed per request. You may need to apply earned leave or split the request based on company policy.'\n"
+                        f"- If another leave request already exists for the selected date: 'Your leave request cannot be processed because another leave request already exists for the selected date. Duplicate or overlapping leave requests are not allowed.'\n"
+                        f"- If the request exceeds the policy limit that requires a medical certificate: 'Your sick leave request requires manual review because the number of days exceeds the policy limit that requires a medical certificate. Please upload a medical certificate or wait for manager/admin review.'\n"
+                        f"- If checking team availability coverage: 'The system checked team availability for tomorrow. If the team leave threshold is exceeded, your request will be marked for manual review. If team coverage is acceptable, the request can proceed to manager approval.'\n"
+                        f"- If applying for leave and asking who will approve: 'Your casual leave request has been created and submitted for approval. Your reporting manager will approve this request. The manager has been notified.'\n"
+                        f"- If missing type/reason: 'Please provide the leave type and reason for the leave. The system needs these details before checking balance, policy, overlap, and approval requirements.'"
                     )
                 },
                 {
@@ -488,6 +498,13 @@ class SupervisorAgent:
                         facts["has_previous_approved_in_month"] = has_previous
                         facts["approved_requests_count_in_month"] = approved_count
                         facts["auto_approval_max_requests_per_month"] = limit
+                        
+                        # Add max_days_per_request to facts
+                        if resolved_leave_type_id:
+                            lt_rec = db.query(LeaveType).filter(LeaveType.LeaveTypeId == resolved_leave_type_id).first()
+                            if lt_rec and lt_rec.MaxDaysPerRequest is not None:
+                                facts["max_days_per_request"] = float(lt_rec.MaxDaysPerRequest)
+                                
                         tool_result = self.decision_agent.execute(facts)
                         
                     elif tool_name == "create_leave_request_record":
@@ -911,7 +928,16 @@ class SupervisorAgent:
                 print(f"Error checking previous approvals in fallback: {ex}")
 
             # Decision Agent
+            max_days = None
+            try:
+                lt_rec = db.query(LeaveType).filter(LeaveType.LeaveTypeId == leave_type_id).first()
+                if lt_rec and lt_rec.MaxDaysPerRequest is not None:
+                    max_days = float(lt_rec.MaxDaysPerRequest)
+            except Exception as ex:
+                print(f"Error querying leave type max days: {ex}")
+
             decision_data = {
+                "max_days_per_request": max_days,
                 "employee_active": emp_result["is_active"] == 1 or emp_result["is_active"] is True,
                 "remaining_balance": bal_result["remaining_days"],
                 "working_days": working_days,
@@ -1057,7 +1083,8 @@ class SupervisorAgent:
                 "start_date": str(start_date),
                 "end_date": str(end_date),
                 "weekend_dates": weekend_dates,
-                "holiday_dates": holiday_dates
+                "holiday_dates": holiday_dates,
+                "leave_type_id": leave_type_id
             }
         except Exception as fallback_err:
             db.rollback()

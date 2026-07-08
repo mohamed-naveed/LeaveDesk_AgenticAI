@@ -213,32 +213,48 @@ async def chat(payload: dict = Body(...), db: Session = Depends(get_db)):
             days = result.get('requested_days', '?')
             start_date = result.get('start_date')
             end_date = result.get('end_date')
-            if status == "No Action Required":
-                msg = result.get('reason', 'All selected dates fall on weekends or holidays.')
-            elif status in ["Approved", "Pending Manager Approval"] and start_date and end_date:
-                date_str = f"on {start_date}" if start_date == end_date else f"from {start_date} to {end_date}"
-                
-                # Check for weekends or holidays to mention in the chat response
-                info_notes = []
-                weekend_dates = result.get("weekend_dates", [])
-                if weekend_dates:
-                    dates_formatted = ", ".join(weekend_dates)
-                    info_notes.append(f"Weekends: {dates_formatted}")
-                
-                holiday_dates = result.get("holiday_dates", [])
-                if holiday_dates:
-                    dates_formatted = ", ".join(holiday_dates)
-                    info_notes.append(f"Holidays: {dates_formatted}")
-                
-                note_str = f" (Excluded {'; '.join(info_notes)})" if info_notes else ""
-                msg = f"Request for {days} day(s) {date_str} is {status}.{note_str} {result.get('reason', '')}"
+            reason = result.get('reason', '') or ''
+            
+            leave_type_name = "leave"
+            lt_id = result.get("leave_type_id")
+            if "earned" in message.lower():
+                leave_type_name = "earned leave"
+            elif lt_id == 20:
+                leave_type_name = "casual leave"
+            elif lt_id == 21:
+                leave_type_name = "sick leave"
+
+            if "overlap" in reason.lower() or "overlap" in message.lower() and status == "Rejected":
+                msg = "Your leave request cannot be processed because another leave request already exists for the selected date. Duplicate or overlapping leave requests are not allowed."
+            elif "exceeds the maximum" in reason.lower():
+                msg = "Your request requires manual review because the requested leave exceeds the maximum casual leave allowed per request. You may need to apply earned leave or split the request based on company policy."
+            elif "medical certificate" in reason.lower() or "medical" in reason.lower():
+                msg = "Your sick leave request requires manual review because the number of days exceeds the policy limit that requires a medical certificate. Please upload a medical certificate or wait for manager/admin review."
+            elif "threshold" in reason.lower():
+                msg = "The system checked team availability for tomorrow. If the team leave threshold is exceeded, your request will be marked for manual review. If team coverage is acceptable, the request can proceed to manager approval."
+            elif "provide" in reason.lower() or "missing" in reason.lower() or "unrecognized leave type" in reason.lower():
+                msg = "Please provide the leave type and reason for the leave. The system needs these details before checking balance, policy, overlap, and approval requirements."
+            elif status == "Pending Manager Approval" and start_date and end_date:
+                if "who" in message.lower() or "approve" in message.lower():
+                    msg = f"Your {leave_type_name} request has been created and submitted for approval. Your reporting manager will approve this request. The manager has been notified."
+                elif leave_type_name == "earned leave":
+                    msg = f"Your {leave_type_name} request has been created. The system calculated working days, checked your leave balance, verified no overlap, and confirmed team availability. The request is pending manager approval."
+                else:
+                    msg = f"Your {leave_type_name} request has been created. The system calculated the working days by excluding weekends and holidays. Your balance is sufficient, no overlapping leave was found, and team availability is acceptable. Since {leave_type_name} requires manager approval, the request is now pending with your manager."
+            elif status == "Approved" and start_date and end_date:
+                if "half" in message.lower():
+                    msg = f"Your half-day {leave_type_name} request has been processed. The system verified that half-day leave is allowed, {leave_type_name} balance is available, and there is no overlap. The request is auto-approved if your policy allows auto-approval for half-day {leave_type_name}."
+                else:
+                    msg = f"Your sick leave request for today has been created. The system checked your {leave_type_name} balance and {leave_type_name} policy. Since same-day {leave_type_name} is allowed and balance is available, the request is auto-approved or sent for manager approval based on company policy."
+            elif status == "No Action Required":
+                msg = reason or 'All selected dates fall on weekends or holidays.'
             else:
-                msg = f"Request for {days} days is {status}. {result.get('reason', '')}"
+                msg = f"Request for {days} days is {status}. {reason}"
             
 # WebSocket notification removed
         else:
             msg = result.get('message') or result.get('response') or str(result)
-        
+
     return {"response": msg}
 
 @router.get("/api/leave-requests")

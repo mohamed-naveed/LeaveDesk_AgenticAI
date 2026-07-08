@@ -29,6 +29,14 @@ class LeaveDecisionAgent:
 
         # Monthly limit removed — no cap applies; monthly_limit_exceeded is always False
 
+        max_days_per_request = data.get("max_days_per_request")
+        if max_days_per_request is not None and data.get("working_days", 0) > max_days_per_request:
+            return {
+                "decision": "ManualReview",
+                "status": "Pending Manager Approval",
+                "reason": f"The requested leave exceeds the maximum allowed days per request of {int(max_days_per_request)} for this leave type."
+            }
+
         if data.get("remaining_balance", 0) < data.get("working_days", 0):
             return {
                 "decision": "ManualReview",
