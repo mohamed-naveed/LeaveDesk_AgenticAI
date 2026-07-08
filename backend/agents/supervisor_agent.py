@@ -480,6 +480,27 @@ class SupervisorAgent:
                     elif tool_name == "make_leave_decision":
                         agent_name_for_audit = "LeaveDecisionAgent"
                         facts = json.loads(args.get("data_json"))
+                        
+                        # Auto-populate active status from DB
+                        emp_rec = db.query(Employee).filter(Employee.EmployeeId == employee_id).first()
+                        facts["employee_active"] = emp_rec.IsActive if emp_rec else False
+                        
+                        # Normalize working_days
+                        if "working_days" not in facts:
+                            facts["working_days"] = facts.get("requested_days", 0)
+                        
+                        # Normalize threshold_exceeded
+                        if "threshold_exceeded" not in facts:
+                            facts["threshold_exceeded"] = facts.get("team_threshold_exceeded", False)
+                            
+                        # Compute notice days
+                        if "start_date" in facts:
+                            try:
+                                s_date = datetime.strptime(facts["start_date"], "%Y-%m-%d").date()
+                                facts["notice_days"] = (s_date - date.today()).days
+                            except Exception:
+                                pass
+                        
                         if "notice_days" not in facts:
                             facts["notice_days"] = 10
                             
@@ -518,6 +539,21 @@ class SupervisorAgent:
                             lt_rec = db.query(LeaveType).filter(LeaveType.LeaveTypeId == resolved_leave_type_id).first()
                             if lt_rec and lt_rec.MaxDaysPerRequest is not None:
                                 facts["max_days_per_request"] = float(lt_rec.MaxDaysPerRequest)
+                                
+                            # Also inject other policy fields
+                            policy = db.query(LeavePolicy).filter(
+                                LeavePolicy.LeaveTypeId == resolved_leave_type_id,
+                                LeavePolicy.IsActive == True
+                            ).first()
+                            if policy:
+                                if "min_notice_days" not in facts:
+                                    facts["min_notice_days"] = policy.MinNoticeDays
+                                if "auto_approval_max_days" not in facts:
+                                    facts["auto_approval_max_days"] = policy.AutoApprovalMaxDays
+                                if "allow_half_day" not in facts:
+                                    facts["allow_half_day"] = policy.AllowHalfDay
+                                if "medical_certificate_after_days" not in facts:
+                                    facts["medical_certificate_after_days"] = policy.MedicalCertificateAfterDays
                                 
                         tool_result = self.decision_agent.execute(facts)
                         

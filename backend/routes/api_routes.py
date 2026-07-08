@@ -207,7 +207,8 @@ async def chat(payload: dict = Body(...), db: Session = Depends(get_db)):
     
     # Pass the LLM response directly — no hardcoded templates
     msg = (
-        result.get("response")
+        result.get("reason")
+        or result.get("response")
         or result.get("chat_response")
         or result.get("message")
         or "Your request has been processed."
