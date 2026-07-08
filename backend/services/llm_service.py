@@ -175,7 +175,7 @@ class LLMService:
                     break
 
             # Check if query is about a specific employee's id/email/profile info
-            is_info_query = any(w in text_lower for w in ["id", "code", "email", "profile", "details"])
+            is_info_query = any(w in text_lower for w in ["id", "code", "email", "profile", "details", "join", "joining"])
             if specific_employee and is_info_query:
                 me_section = extract_section(context_str, "Managed Employees:", ["Managed Employees Leave Balances:"])
                 matching_line = None
