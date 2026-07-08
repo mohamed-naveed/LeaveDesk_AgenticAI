@@ -363,9 +363,31 @@ class LLMService:
                 "intent": "general_inquiry",
                 "chat_response": "I couldn't find your department details in your profile."
             }
+
+        if any(w in text_lower for w in ["my details", "profile details", "my profile", "get my details", "show my details", "mt details", "get mt details", "profile info", "my info"]):
+            profile_lines = []
+            capture = False
+            for line in context_str.split("\n"):
+                if "Employee Profile:" in line:
+                    capture = True
+                    profile_lines.append(line)
+                    continue
+                if capture:
+                    if line.strip() == "" or "Employee Balances:" in line or "Company Leave Policy:" in line:
+                        break
+                    profile_lines.append(line)
+            if profile_lines:
+                return {
+                    "intent": "general_inquiry",
+                    "chat_response": "Here are your profile details:\n" + "\n".join(profile_lines)
+                }
+            return {
+                "intent": "general_inquiry",
+                "chat_response": "I couldn't find your profile details in the system."
+            }
         
         # Check if the user is attempting to apply for a leave
-        has_question_kw = any(w in text_lower for w in ["history", "past", "last", "previous", "holiday", "holidays", "policy", "policies", "olicies", "rule", "rules", "balance", "balances", "how much", "remaining", "pending", "approval", "limit", "limits", "manager", "code", "join", "joining", "status", "request", "requests", "show", "list", "who", "when", "what", "where", "email", "department"])
+        has_question_kw = any(w in text_lower for w in ["history", "past", "last", "previous", "holiday", "holidays", "policy", "policies", "olicies", "rule", "rules", "balance", "balances", "how much", "remaining", "pending", "approval", "limit", "limits", "manager", "code", "join", "joining", "status", "request", "requests", "show", "list", "who", "when", "what", "where", "email", "department", "details", "profile", "info", "mt"])
         is_applying = (
             any(w in text_lower for w in ["apply", "appply", "aply", "applying", "request", "want", "need", "take", "book", "tomorrow", "starting", "in ", "day", "leave"]) 
             or any(lt in text_lower for lt in ["casual", "sick", "annual", "unpaid"])
