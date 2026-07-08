@@ -205,101 +205,19 @@ async def chat(payload: dict = Body(...), db: Session = Depends(get_db)):
         db=db
     )
     
-    msg = None
-    if not result.get("success", True):
-        msg = f"Failed to process request: {result.get('message', 'Unknown error')}"
-    elif 'status' in result and 'requested_days' in result:
-            status = result.get('status', 'Processed')
-            days = result.get('requested_days', '?')
-            start_date = result.get('start_date')
-            end_date = result.get('end_date')
-            reason = result.get('reason', '') or ''
-            
-            leave_type_name = "leave"
-            lt_id = result.get("leave_type_id")
-            if "earned" in message.lower():
-                leave_type_name = "earned leave"
-            elif lt_id == 20:
-                leave_type_name = "casual leave"
-            elif lt_id == 21:
-                leave_type_name = "sick leave"
+    # Pass the LLM response directly — no hardcoded templates
+    msg = (
+        result.get("response")
+        or result.get("chat_response")
+        or result.get("message")
+        or "Your request has been processed."
+    )
 
-            if "overlap" in reason.lower() or ("overlap" in message.lower() and status == "Rejected"):
-                msg = (
-                    "❌ Status: Rejected\n"
-                    "Your leave request cannot be processed because another leave request already exists for the selected date. "
-                    "Duplicate or overlapping leave requests are not allowed."
-                )
-            elif "exceeds the maximum" in reason.lower():
-                msg = (
-                    "⚠️ Status: Rejected — Exceeds Maximum Allowed Days\n"
-                    f"Your {leave_type_name} request for {days} day(s) has been rejected because it exceeds the maximum allowed per request. "
-                    "You may need to apply earned leave or split the request based on company policy."
-                )
-            elif "medical certificate" in reason.lower() or "medical" in reason.lower():
-                msg = (
-                    "⚠️ Status: Pending Manager Approval — Medical Certificate Required\n"
-                    f"Your sick leave request for {days} day(s) has been submitted. The request exceeds the policy limit that requires a medical certificate. "
-                    "Please upload a medical certificate or wait for manager/admin review."
-                )
-            elif "threshold" in reason.lower():
-                msg = (
-                    "⚠️ Status: Pending Manager Approval — Team Availability Check Required\n"
-                    "Your leave request has been submitted but requires team availability review. "
-                    "If the team leave threshold is exceeded, your request will be marked for manual review. "
-                    "Otherwise it will proceed to your manager for approval."
-                )
-            elif "provide" in reason.lower() or "missing" in reason.lower() or "unrecognized leave type" in reason.lower():
-                msg = (
-                    "❌ Unable to Process Request\n"
-                    "Please provide the leave type and reason for the leave. "
-                    "The system needs these details before checking balance, policy, overlap, and approval requirements."
-                )
-            elif status == "Pending Manager Approval" and start_date and end_date:
-                date_str = f"on {start_date}" if start_date == end_date else f"from {start_date} to {end_date}"
-                msg = (
-                    f"⏳ Status: Pending Manager Approval\n"
-                    f"Your {leave_type_name} request for {days} day(s) {date_str} has been submitted successfully. "
-                    f"The system verified your leave balance, confirmed no overlapping leave, and checked team availability. "
-                    f"The request is now awaiting approval from your manager."
-                )
-            elif status == "Approved" and start_date and end_date:
-                date_str = f"on {start_date}" if start_date == end_date else f"from {start_date} to {end_date}"
-                if "half" in message.lower():
-                    msg = (
-                        f"✅ Status: Approved\n"
-                        f"Your half-day {leave_type_name} request for {days} day(s) {date_str} has been approved. "
-                        f"Half-day leave is allowed by policy, your balance is sufficient, and no overlapping leave was found."
-                    )
-                else:
-                    msg = (
-                        f"✅ Status: Approved\n"
-                        f"Your {leave_type_name} request for {days} day(s) {date_str} has been approved. "
-                        f"Your leave balance is sufficient and no overlapping leave was found."
-                    )
-            elif status == "Rejected" and start_date and end_date:
-                date_str = f"on {start_date}" if start_date == end_date else f"from {start_date} to {end_date}"
-                msg = (
-                    f"❌ Status: Rejected\n"
-                    f"Your {leave_type_name} request for {days} day(s) {date_str} has been rejected. "
-                    f"Reason: {reason or 'Please contact HR for details.'}"
-                )
-            elif status == "No Action Required":
-                msg = reason or "All selected dates fall on weekends or holidays. No leave was applied."
-            else:
-                msg = f"Status: {status}. {reason}"
-    elif result.get('chat_response'):
-        msg = result['chat_response']
-    elif result.get('response') and result.get('response') is not None:
-        msg = result['response']
-    elif result.get('message'):
-        msg = result['message']
-    elif result.get('success') is True:
-        msg = "Your request has been processed successfully."
-    else:
-        msg = "Something went wrong. Please try again."
+    if not result.get("success", True):
+        msg = result.get("message") or "Failed to process your request. Please try again."
 
     return {"response": msg}
+
 
 @router.get("/api/leave-requests")
 def all_leave_requests(db: Session = Depends(get_db)):
