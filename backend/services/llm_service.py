@@ -93,7 +93,19 @@ class LLMService:
                 }
                 
         except Exception as e:
-            print(f"LLM Error: {e}. Trying lightweight RAG LLM call.")
+            print(f"LLM Error: {e}. Checking query type for fallback.")
+            text_lower = text.lower()
+            has_q_kw = any(w in text_lower for w in ["history", "histroy", "histry", "past", "last", "previous", "holiday", "holidays", "policy", "policies", "olicies", "rule", "rules", "balance", "balances", "how much", "remaining", "pending", "approval", "limit", "limits", "manager", "code", "join", "joining", "status", "request", "requests", "show", "list", "who", "when", "what", "where", "email", "department", "details", "profile", "info", "mt"])
+            is_applying_query = (
+                any(w in text_lower for w in ["apply", "appply", "aply", "applying", "request", "want", "need", "take", "book", "tomorrow", "starting", "in ", "day", "leave"]) 
+                or any(lt in text_lower for lt in ["casual", "sick", "annual", "unpaid"])
+            ) and not has_q_kw
+
+            if is_applying_query:
+                print("Leave application detected. Falling back directly to _fallback_process_chat to validate and store.")
+                return self._fallback_process_chat(text, context_str)
+
+            print("General query detected. Trying lightweight RAG LLM call.")
             rag_response = self._rag_llm_call(text, context_str)
             if rag_response:
                 return {
