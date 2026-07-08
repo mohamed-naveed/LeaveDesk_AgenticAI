@@ -319,7 +319,7 @@ class SupervisorAgent:
                         f"11. Call `send_notification` to notify the user.\n"
                         f"12. Finally, call `submit_validation_result` to terminate and return the final results.\n\n"
                         f"If the user's message is a general inquiry (asking about leave balances, policies, past history, pending requests, or upcoming holidays), do NOT call any validation tools. Read the relevant section in the Context block above and reply directly.\n"
-                        f"NOTE: Employees (Role: employee) are NOT authorized to view teammates' leaves. If the role is 'employee' and they ask about teammate leaves, refuse and say: 'You are not authorized to view teammate leaves.'\n"
+                        f"NOTE: Employees (Role: employee) are NOT authorized to view or query specific leave requests, dates, or histories of other teammates/colleagues. If the role is 'employee' and they ask about teammate leaves (e.g., 'Is Rahul on leave tomorrow?'), refuse and say: 'You are not authorized to view teammate leaves.' However, if they ask a general policy question about team availability/threshold limits (e.g., 'Can I take leave tomorrow if many team members are already on leave?'), you should explain the team threshold policy dynamically without disclosing specific teammate details.\n"
                         f"If the caller is a manager and requests to approve, reject, accept, deny, or cancel a pending leave request, call `resolve_manager_action`.\n\n"
                         f"=== RESPONSE EXAMPLES (use these to guide your final reply tone and content) ===\n\n"
                         f"Q1: Apply casual leave from 10 July 2026 to 14 July 2026 for family function.\n"
@@ -837,7 +837,9 @@ class SupervisorAgent:
             if p.MinNoticeDays > 0:
                 context_str += f"Requires {p.MinNoticeDays} days advance notice. "
             if p.AutoApprovalMaxDays:
-                context_str += f"Auto-approved up to {p.AutoApprovalMaxDays} days."
+                context_str += f"Auto-approved up to {p.AutoApprovalMaxDays} days. "
+            if p.TeamLeaveThresholdPercent is not None:
+                context_str += f"Team leave threshold: {float(p.TeamLeaveThresholdPercent)}%."
             context_str += "\n"
 
         # Fetch Recent Leave History
