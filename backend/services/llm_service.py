@@ -167,7 +167,7 @@ class LLMService:
                         "chat_response": f"Here are the leave balances for all your managed employees:\n{bal_section}"
                     }
 
-            is_history_query = any(w in text_lower for w in ["history", "past", "last", "previous", "applied"])
+            is_history_query = any(w in text_lower for w in ["history", "past", "last", "previous", "applied", "request", "requests"])
             if is_history_query and not is_personal:
                 hist_section = extract_section(context_str, "Managed Employees Leave History:", ["Upcoming Company Holidays:"])
                 if specific_employee:
@@ -295,7 +295,7 @@ class LLMService:
             }
         
         # Check if the user is attempting to apply for a leave
-        has_question_kw = any(w in text_lower for w in ["history", "past", "last", "previous", "holiday", "holidays", "policy", "policies", "olicies", "rule", "rules", "balance", "balances", "how much", "remaining", "pending", "approval", "limit", "limits", "manager", "code", "join", "joining", "status", "requests"])
+        has_question_kw = any(w in text_lower for w in ["history", "past", "last", "previous", "holiday", "holidays", "policy", "policies", "olicies", "rule", "rules", "balance", "balances", "how much", "remaining", "pending", "approval", "limit", "limits", "manager", "code", "join", "joining", "status", "request", "requests", "show", "list", "who", "when", "what", "where"])
         is_applying = (
             any(w in text_lower for w in ["apply", "appply", "aply", "applying", "request", "want", "need", "take", "book", "tomorrow", "starting", "in ", "day", "leave"]) 
             or any(lt in text_lower for lt in ["casual", "sick", "annual", "unpaid"])
@@ -391,7 +391,7 @@ class LLMService:
             }
             
         # 2. Leave History query (Personal or Teammates)
-        if any(w in text_lower for w in ["history", "last leave", "past leave", "applied", "previous", "leaves", "leave"]):
+        if any(w in text_lower for w in ["history", "last leave", "past leave", "applied", "previous", "leaves", "leave", "request", "requests"]):
             is_team_query = any(w in text_lower for w in ["team", "teammate", "teammates", "colleague", "colleagues", "others", "other"])
             
             history_lines = []
