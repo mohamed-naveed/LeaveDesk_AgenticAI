@@ -95,7 +95,7 @@ class LLMService:
         except Exception as e:
             print(f"LLM Error: {e}. Checking query type for fallback.")
             text_lower = text.lower()
-            has_q_kw = any(w in text_lower for w in ["history", "histroy", "histry", "past", "last", "previous", "holiday", "holidays", "policy", "policies", "olicies", "rule", "rules", "balance", "balances", "how much", "remaining", "pending", "approval", "limit", "limits", "manager", "code", "join", "joining", "status", "request", "requests", "show", "list", "who", "when", "what", "where", "email", "department", "details", "profile", "info", "mt"])
+            has_q_kw = any(w in text_lower for w in ["history", "histroy", "histry", "past", "last", "previous", "holiday", "holidays", "policy", "policies", "olicies", "rule", "rules", "balance", "balances", "how much", "remaining", "pending", "approval", "limit", "limits", "manager", "code", "join", "joining", "status", "request", "requests", "show", "list", "who", "when", "what", "where", "email", "department", "details", "profile", "info", "mt", "team", "teammate", "teammates", "colleague", "colleagues", "others", "other"])
             is_applying_query = (
                 any(w in text_lower for w in ["apply", "appply", "aply", "applying", "request", "want", "need", "take", "book", "tomorrow", "starting", "in ", "day", "leave"]) 
                 or any(lt in text_lower for lt in ["casual", "sick", "annual", "unpaid"])
@@ -399,7 +399,7 @@ class LLMService:
             }
         
         # Check if the user is attempting to apply for a leave
-        has_question_kw = any(w in text_lower for w in ["history", "histroy", "histry", "past", "last", "previous", "holiday", "holidays", "policy", "policies", "olicies", "rule", "rules", "balance", "balances", "how much", "remaining", "pending", "approval", "limit", "limits", "manager", "code", "join", "joining", "status", "request", "requests", "show", "list", "who", "when", "what", "where", "email", "department", "details", "profile", "info", "mt"])
+        has_question_kw = any(w in text_lower for w in ["history", "histroy", "histry", "past", "last", "previous", "holiday", "holidays", "policy", "policies", "olicies", "rule", "rules", "balance", "balances", "how much", "remaining", "pending", "approval", "limit", "limits", "manager", "code", "join", "joining", "status", "request", "requests", "show", "list", "who", "when", "what", "where", "email", "department", "details", "profile", "info", "mt", "team", "teammate", "teammates", "colleague", "colleagues", "others", "other"])
         is_applying = (
             any(w in text_lower for w in ["apply", "appply", "aply", "applying", "request", "want", "need", "take", "book", "tomorrow", "starting", "in ", "day", "leave"]) 
             or any(lt in text_lower for lt in ["casual", "sick", "annual", "unpaid"])
